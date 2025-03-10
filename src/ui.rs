@@ -3,8 +3,10 @@ use ggez::glam::Vec2;
 use crate::skills::Skills;
 use crate::inventory::{Inventory, DroppedItem};
 use crate::equipment::Equipment;
+use crate::inventory::ArmorSlot;
 use crate::entity::Entity;
 use crate::world::{Tree, FishingSpot};
+use crate::sprites::SpriteManager;
 
 #[derive(Debug)]
 pub struct ContextMenuItem {
@@ -107,132 +109,6 @@ impl ContextMenu {
     }
 }
 
-pub struct Minimap {
-    pub visible: bool,
-    pub x: f32,
-    pub y: f32,
-    pub size: f32,
-    pub scale: f32,
-}
-
-impl Minimap {
-    pub fn new() -> Self {
-        Self {
-            visible: true,
-            x: 900.0,  // Position in top-right corner
-            y: 50.0,
-            size: 100.0,  // Size of the minimap
-            scale: 0.1,   // Scale factor for converting world coords to minimap
-        }
-    }
-
-    pub fn draw(
-        &self,
-        canvas: &mut Canvas,
-        player_x: f32,
-        player_y: f32,
-        entities: &[Entity],
-        trees: &[Tree],
-        fishing_spots: &[FishingSpot],
-    ) -> GameResult {
-        if !self.visible {
-            return Ok(());
-        }
-
-        // Draw black background
-        canvas.draw(
-            &graphics::Quad,
-            graphics::DrawParam::new()
-                .dest(Vec2::new(self.x, self.y))
-                .scale(Vec2::new(self.size, self.size))
-                .color(Color::BLACK),
-        );
-
-        // Draw trees and walls (green dots)
-        for tree in trees {
-            let minimap_x = self.x + (tree.x - player_x) * self.scale + self.size / 2.0;
-            let minimap_y = self.y + (tree.y - player_y) * self.scale + self.size / 2.0;
-
-            if self.is_in_bounds(minimap_x, minimap_y) {
-                canvas.draw(
-                    &graphics::Quad,
-                    graphics::DrawParam::new()
-                        .dest(Vec2::new(minimap_x - 1.0, minimap_y - 1.0))
-                        .scale(Vec2::new(2.0, 2.0))
-                        .color(Color::GREEN),
-                );
-            }
-        }
-
-        // Draw fishing spots (cyan dots)
-        for spot in fishing_spots {
-            let minimap_x = self.x + (spot.x - player_x) * self.scale + self.size / 2.0;
-            let minimap_y = self.y + (spot.y - player_y) * self.scale + self.size / 2.0;
-
-            if self.is_in_bounds(minimap_x, minimap_y) {
-                canvas.draw(
-                    &graphics::Quad,
-                    graphics::DrawParam::new()
-                        .dest(Vec2::new(minimap_x - 1.0, minimap_y - 1.0))
-                        .scale(Vec2::new(2.0, 2.0))
-                        .color(Color::CYAN),
-                );
-            }
-        }
-
-        // Draw NPCs (red dots)
-        for entity in entities {
-            if entity.is_alive() {
-                let (x, y) = entity.get_position();
-                let minimap_x = self.x + (x - player_x) * self.scale + self.size / 2.0;
-                let minimap_y = self.y + (y - player_y) * self.scale + self.size / 2.0;
-
-                if self.is_in_bounds(minimap_x, minimap_y) {
-                    canvas.draw(
-                        &graphics::Quad,
-                        graphics::DrawParam::new()
-                            .dest(Vec2::new(minimap_x - 1.0, minimap_y - 1.0))
-                            .scale(Vec2::new(2.0, 2.0))
-                            .color(Color::RED),
-                    );
-                }
-            }
-        }
-
-        // Draw player (white dot in center)
-        canvas.draw(
-            &graphics::Quad,
-            graphics::DrawParam::new()
-                .dest(Vec2::new(self.x + self.size / 2.0 - 1.5, self.y + self.size / 2.0 - 1.5))
-                .scale(Vec2::new(3.0, 3.0))
-                .color(Color::WHITE),
-        );
-
-        Ok(())
-    }
-
-    fn is_in_bounds(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x <= self.x + self.size && y >= self.y && y <= self.y + self.size
-    }
-
-    pub fn handle_click(&self, x: f32, y: f32, player_x: f32, player_y: f32) -> Option<(f32, f32)> {
-        if !self.visible {
-            return None;
-        }
-
-        // Check if click is within minimap bounds
-        if !self.is_in_bounds(x, y) {
-            return None;
-        }
-
-        // Convert minimap coordinates back to world coordinates
-        let world_x = player_x + (x - (self.x + self.size / 2.0)) / self.scale;
-        let world_y = player_y + (y - (self.y + self.size / 2.0)) / self.scale;
-
-        Some((world_x, world_y))
-    }
-}
-
 pub struct GameUI {
     pub inventory_visible: bool,
     pub context_menu: ContextMenu,
@@ -241,11 +117,11 @@ pub struct GameUI {
     mouse_x: f32,
     mouse_y: f32,
     skills_menu_visible: bool,
-    pub minimap: Minimap,
+    sprite_manager: &'static SpriteManager,
 }
 
 impl GameUI {
-    pub fn new() -> Self {
+    pub fn new(sprite_manager: &'static SpriteManager) -> Self {
         Self {
             inventory_visible: false,
             context_menu: ContextMenu::new(),
@@ -254,7 +130,7 @@ impl GameUI {
             mouse_x: 0.0,
             mouse_y: 0.0,
             skills_menu_visible: false,
-            minimap: Minimap::new(),
+            sprite_manager,
         }
     }
 
@@ -291,7 +167,10 @@ impl GameUI {
         self.mouse_y = y;
     }
 
-    pub fn draw(&self, canvas: &mut Canvas, skills: &Skills, inventory: &Inventory, equipment: &Equipment, dropped_items: &[DroppedItem], player_x: f32, player_y: f32, entities: &[Entity], trees: &[Tree], fishing_spots: &[FishingSpot]) -> GameResult {
+    pub fn draw(&mut self, canvas: &mut Canvas, skills: &Skills, inventory: &Inventory, equipment: &Equipment, dropped_items: &[DroppedItem], player_x: f32, player_y: f32, entities: &[Entity], trees: &[Tree], fishing_spots: &[FishingSpot]) -> GameResult {
+        // Clear tooltip at start of draw
+        self.tooltip_text = None;
+
         // Draw inventory if visible
         if self.inventory_visible {
             // Draw inventory background
@@ -303,12 +182,93 @@ impl GameUI {
                     .color(Color::new(0.0, 0.0, 0.0, 0.8)),
             );
 
+            // Draw equipment section
+            let equip_text = graphics::Text::new("Equipment:".to_string());
+            canvas.draw(
+                &equip_text,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(70.0, 85.0))
+                    .color(Color::WHITE),
+            );
+
+            // Draw equipped items
+            let equipped_items = [
+                ("Weapon", equipment.get_weapon()),
+                ("Head", equipment.get_armor(&ArmorSlot::Head)),
+                ("Body", equipment.get_armor(&ArmorSlot::Body)),
+                ("Legs", equipment.get_armor(&ArmorSlot::Legs)),
+            ];
+
+            for (i, (slot_name, item)) in equipped_items.iter().enumerate() {
+                let x = 70.0 + i as f32 * 45.0;
+                let y = 105.0;
+
+                // Draw slot background
+                canvas.draw(
+                    &graphics::Quad,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(x, y))
+                        .scale(Vec2::new(40.0, 40.0))
+                        .color(Color::new(0.4, 0.4, 0.4, 0.8)),
+                );
+
+                // Draw slot label
+                let label = graphics::Text::new(slot_name.chars().next().unwrap_or('?').to_string());
+                canvas.draw(
+                    &label,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(x + 2.0, y + 2.0))
+                        .color(Color::new(0.7, 0.7, 0.7, 0.5)),
+                );
+
+                // Draw equipped item if any
+                if let Some(item) = item {
+                    // Check if mouse is hovering over this slot
+                    if self.mouse_x >= x && self.mouse_x <= x + 40.0 && 
+                       self.mouse_y >= y && self.mouse_y <= y + 40.0 {
+                        self.tooltip_text = Some(format!("Equipped: {}", item.name));
+                    }
+
+                    // Convert item name to sprite name
+                    let sprite_name = item.name.to_lowercase().replace(" ", "_");
+                    
+                    // Draw item sprite
+                    if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
+                        canvas.draw(
+                            sprite,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(x + 4.0, y + 4.0))
+                                .scale(Vec2::new(2.0, 2.0))
+                        );
+                    } else {
+                        println!("Missing sprite for item: {}", sprite_name);
+                        // Fallback to letter if sprite not found
+                        let text = graphics::Text::new(item.name.chars().next().unwrap_or('?').to_string());
+                        canvas.draw(
+                            &text,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(x + 15.0, y + 15.0))
+                                .color(Color::WHITE),
+                        );
+                    }
+                }
+            }
+
+            // Draw inventory section
+            let inv_text = graphics::Text::new("Inventory:".to_string());
+            canvas.draw(
+                &inv_text,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(70.0, 155.0))
+                    .color(Color::WHITE),
+            );
+
             // Draw inventory slots
             for i in 0..28 {
                 let row = i / 4;
                 let col = i % 4;
                 let x = 70.0 + col as f32 * 45.0;
-                let y = 100.0 + row as f32 * 45.0;
+                let y = 175.0 + row as f32 * 45.0;
 
                 // Draw slot background
                 let slot_color = if Some(i) == self.selected_slot {
@@ -327,13 +287,34 @@ impl GameUI {
 
                 // Draw item in slot if it exists
                 if let Some(item) = inventory.get_items().get(i).and_then(|opt| opt.as_ref()) {
-                    let text = graphics::Text::new(item.name.chars().next().unwrap_or('?').to_string());
-                    canvas.draw(
-                        &text,
-                        graphics::DrawParam::new()
-                            .dest(Vec2::new(x + 15.0, y + 15.0))
-                            .color(Color::WHITE),
-                    );
+                    // Check if mouse is hovering over this slot
+                    if self.mouse_x >= x && self.mouse_x <= x + 40.0 && 
+                       self.mouse_y >= y && self.mouse_y <= y + 40.0 {
+                        self.tooltip_text = Some(item.name.clone());
+                    }
+
+                    // Convert item name to sprite name
+                    let sprite_name = item.name.to_lowercase().replace(" ", "_");
+                    
+                    // Draw item sprite
+                    if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
+                        canvas.draw(
+                            sprite,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(x + 4.0, y + 4.0))
+                                .scale(Vec2::new(2.0, 2.0))
+                        );
+                    } else {
+                        println!("Missing sprite for item: {}", sprite_name);
+                        // Fallback to letter if sprite not found
+                        let text = graphics::Text::new(item.name.chars().next().unwrap_or('?').to_string());
+                        canvas.draw(
+                            &text,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(x + 15.0, y + 15.0))
+                                .color(Color::WHITE),
+                        );
+                    }
                 }
             }
         }
@@ -345,24 +326,24 @@ impl GameUI {
                 &graphics::Quad,
                 graphics::DrawParam::new()
                     .dest(Vec2::new(300.0, 80.0))
-                    .scale(Vec2::new(200.0, 300.0))
+                    .scale(Vec2::new(250.0, 300.0))
                     .color(Color::new(0.0, 0.0, 0.0, 0.8)),
             );
 
-            // Draw skill levels
+            // Draw skill levels and XP
             let mut y = 100.0;
             let skills_text = [
-                ("Attack", skills.attack.get_level()),
-                ("Strength", skills.strength.get_level()),
-                ("Defense", skills.defense.get_level()),
-                ("Woodcutting", skills.woodcutting.get_level()),
-                ("Fishing", skills.fishing.get_level()),
-                ("Cooking", skills.cooking.get_level()),
-                ("Firemaking", skills.firemaking.get_level()),
+                ("Attack", &skills.attack),
+                ("Strength", &skills.strength),
+                ("Defense", &skills.defense),
+                ("Woodcutting", &skills.woodcutting),
+                ("Fishing", &skills.fishing),
+                ("Cooking", &skills.cooking),
+                ("Firemaking", &skills.firemaking),
             ];
 
-            for (skill_name, level) in skills_text.iter() {
-                let text = graphics::Text::new(format!("{}: {}", skill_name, level));
+            for (skill_name, skill) in skills_text.iter() {
+                let text = graphics::Text::new(format!("{}: {} (XP: {})", skill_name, skill.get_level(), skill.get_experience()));
                 canvas.draw(
                     &text,
                     graphics::DrawParam::new()
@@ -386,9 +367,6 @@ impl GameUI {
                     .color(Color::WHITE),
             );
         }
-
-        // Draw minimap last so it appears on top
-        self.minimap.draw(canvas, player_x, player_y, entities, trees, fishing_spots)?;
 
         Ok(())
     }

@@ -71,13 +71,13 @@ pub struct GameState {
     pending_action: PendingAction,
     ongoing_action: OngoingAction,
     action_timer: f32,
-    sprite_manager: SpriteManager,
+    sprite_manager: &'static SpriteManager,
     world_objects: Vec<WorldObject>,
 }
 
 impl GameState {
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
-        let sprite_manager = SpriteManager::new(ctx)?;
+        let sprite_manager = Box::leak(Box::new(SpriteManager::new(ctx)?));
         
         let mut state = Self {
             player_x: 512.0,
@@ -86,7 +86,7 @@ impl GameState {
             camera_y: 0.0,
             movement_speed: 4.0,
             skills: Skills::new(),
-            game_ui: GameUI::new(),
+            game_ui: GameUI::new(sprite_manager),
             player_combat: Combat::new(20),
             entities: Vec::new(),
             inventory: Inventory::new(28),
@@ -103,7 +103,7 @@ impl GameState {
             pending_action: PendingAction::None,
             ongoing_action: OngoingAction::None,
             action_timer: 0.0,
-            sprite_manager,
+            sprite_manager: &*sprite_manager,
             world_objects: Vec::new(),
         };
 
@@ -896,7 +896,7 @@ impl EventHandler for GameState {
         );
 
         // Draw UI elements (these don't use camera offset)
-        self.game_ui.draw(
+        (&mut self.game_ui).draw(
             &mut canvas,
             &self.skills,
             &self.inventory,
@@ -914,12 +914,6 @@ impl EventHandler for GameState {
     }
 
     fn mouse_button_down_event(&mut self, _ctx: &mut Context, button: MouseButton, x: f32, y: f32) -> GameResult {
-        // Check for minimap clicks first
-        if let Some((world_x, world_y)) = self.game_ui.minimap.handle_click(x, y, self.player_x, self.player_y) {
-            self.set_destination(world_x, world_y, PendingAction::None);
-            return Ok(());
-        }
-
         // First check if we're clicking in the UI area
         if y >= 0.0 && y <= 50.0 {
             // UI bar click handling
@@ -990,9 +984,6 @@ impl EventHandler for GameState {
                 if input.mods.contains(ggez::input::keyboard::KeyMods::CTRL) {
                     self.save_game();
                 }
-            }
-            Some(KeyCode::M) => {
-                self.game_ui.minimap.visible = !self.game_ui.minimap.visible;
             }
             _ => {}
         }

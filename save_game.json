@@ -1,80 +1,44 @@
 {
-  "player_x": 241.45422,
-  "player_y": 681.6109,
+  "player_x": 512.0,
+  "player_y": 384.0,
   "skills": {
     "attack": {
-      "level": 2,
-      "experience": 112
+      "level": 1,
+      "experience": 0
     },
     "strength": {
       "level": 1,
-      "experience": 20
+      "experience": 0
     },
     "defense": {
       "level": 1,
-      "experience": 52
+      "experience": 0
     },
     "woodcutting": {
-      "level": 7,
-      "experience": 750
+      "level": 1,
+      "experience": 0
     },
     "firemaking": {
-      "level": 8,
-      "experience": 960
+      "level": 1,
+      "experience": 0
     },
     "fishing": {
       "level": 1,
-      "experience": 80
+      "experience": 0
     },
     "cooking": {
       "level": 1,
       "experience": 0
     }
   },
-  "health": 12,
+  "health": 20,
   "max_health": 20,
   "inventory": {
     "items": [
-      {
-        "name": "Logs",
-        "item_type": {
-          "Resource": {
-            "Logs": {
-              "firemaking_level": 1
-            }
-          }
-        }
-      },
-      {
-        "name": "Logs",
-        "item_type": {
-          "Resource": {
-            "Logs": {
-              "firemaking_level": 1
-            }
-          }
-        }
-      },
-      {
-        "name": "Logs",
-        "item_type": {
-          "Resource": {
-            "Logs": {
-              "firemaking_level": 1
-            }
-          }
-        }
-      },
-      {
-        "name": "Logs",
-        "item_type": {
-          "Resource": {
-            "Logs": {
-              "firemaking_level": 1
-            }
-          }
-        }
-      },
+      null,
+      null,
+      null,
+      null,
       {
         "name": "Bronze Axe",
         "item_type": {
@@ -92,36 +56,9 @@
         }
       },
       null,
-      {
-        "name": "Logs",
-        "item_type": {
-          "Resource": {
-            "Logs": {
-              "firemaking_level": 1
-            }
-          }
-        }
-      },
-      {
-        "name": "Logs",
-        "item_type": {
-          "Resource": {
-            "Logs": {
-              "firemaking_level": 1
-            }
-          }
-        }
-      },
-      {
-        "name": "Fishing Rod",
-        "item_type": {
-          "Tool": {
-            "FishingRod": {
-              "fishing_level": 1
-            }
-          }
-        }
-      },
+      null,
+      null,
+      null,
       null,
       null,
       null,

@@ -182,7 +182,112 @@ def draw_path(draw):
             else:
                 draw.point([i, j], fill=(190, 160, 120))
 
-# Create all sprites
+# Bronze helmet sprite
+def draw_bronze_helmet(draw):
+    # Main helmet shape
+    draw.rectangle([4, 4, 12, 12], fill=(205, 127, 50))  # Bronze color
+    # Helmet top
+    draw.arc([4, 2, 12, 10], 0, 180, fill=(205, 127, 50), width=2)
+    # Helmet details
+    draw.line([4, 8, 12, 8], fill=(184, 115, 51), width=1)
+
+# Bronze platebody sprite
+def draw_bronze_platebody(draw):
+    # Main body
+    draw.rectangle([4, 2, 12, 12], fill=(205, 127, 50))
+    # Shoulder pads
+    draw.rectangle([2, 2, 4, 6], fill=(205, 127, 50))
+    draw.rectangle([12, 2, 14, 6], fill=(205, 127, 50))
+    # Armor details
+    draw.line([6, 4, 10, 4], fill=(184, 115, 51), width=1)
+    draw.line([6, 8, 10, 8], fill=(184, 115, 51), width=1)
+
+# Bronze platelegs sprite
+def draw_bronze_platelegs(draw):
+    # Legs
+    draw.rectangle([4, 2, 7, 14], fill=(205, 127, 50))
+    draw.rectangle([9, 2, 12, 14], fill=(205, 127, 50))
+    # Belt area
+    draw.rectangle([4, 2, 12, 4], fill=(184, 115, 51))
+
+# Fishing rod sprite
+def draw_fishing_rod(draw):
+    # Rod
+    draw.line([4, 2, 12, 8], fill=(139, 69, 19), width=2)
+    # Handle
+    draw.rectangle([2, 12, 6, 14], fill=(139, 69, 19))
+    # Line
+    draw.line([12, 8, 14, 12], fill=(200, 200, 200), width=1)
+
+# Bait sprite
+def draw_bait(draw):
+    # Small worm/bait shape
+    draw.ellipse([6, 6, 10, 10], fill=(150, 75, 0))
+    draw.ellipse([5, 7, 8, 9], fill=(170, 85, 0))
+
+# Tinderbox sprite
+def draw_tinderbox(draw):
+    # Box
+    draw.rectangle([4, 6, 12, 12], fill=(139, 69, 19))
+    # Flint and steel
+    draw.line([6, 4, 10, 4], fill=(150, 150, 150), width=2)
+    # Box details
+    draw.rectangle([5, 7, 11, 11], fill=(101, 67, 33))
+
+# Raw shrimp sprite
+def draw_raw_shrimp(draw):
+    # Body
+    draw.ellipse([6, 6, 12, 10], fill=(255, 150, 150))
+    # Tail
+    draw.polygon([(4, 8), (6, 6), (6, 10)], fill=(255, 150, 150))
+
+# Cooked shrimp sprite
+def draw_cooked_shrimp(draw):
+    # Body
+    draw.ellipse([6, 6, 12, 10], fill=(255, 120, 90))
+    # Tail
+    draw.polygon([(4, 8), (6, 6), (6, 10)], fill=(255, 120, 90))
+
+# Raw trout sprite
+def draw_raw_trout(draw):
+    # Body
+    draw.ellipse([4, 6, 12, 10], fill=(150, 150, 255))
+    # Tail
+    draw.polygon([(12, 8), (14, 6), (14, 10)], fill=(150, 150, 255))
+    # Eye
+    draw.ellipse([5, 7, 6, 8], fill=(255, 255, 255))
+    draw.point([5, 7], fill=(0, 0, 0))
+
+# Cooked trout sprite
+def draw_cooked_trout(draw):
+    # Body
+    draw.ellipse([4, 6, 12, 10], fill=(180, 140, 100))
+    # Tail
+    draw.polygon([(12, 8), (14, 6), (14, 10)], fill=(180, 140, 100))
+    # Eye
+    draw.ellipse([5, 7, 6, 8], fill=(200, 200, 200))
+    draw.point([5, 7], fill=(0, 0, 0))
+
+# Burnt fish sprite
+def draw_burnt_fish(draw):
+    # Body
+    draw.ellipse([4, 6, 12, 10], fill=(50, 50, 50))
+    # Tail
+    draw.polygon([(12, 8), (14, 6), (14, 10)], fill=(50, 50, 50))
+    # Charred details
+    draw.line([6, 7, 10, 7], fill=(30, 30, 30), width=1)
+    draw.line([6, 9, 10, 9], fill=(30, 30, 30), width=1)
+
+# Bronze sword sprite
+def draw_bronze_sword(draw):
+    # Blade
+    draw.polygon([(8, 2), (10, 2), (10, 12), (8, 12)], fill=(205, 127, 50))  # Bronze color
+    # Handle
+    draw.rectangle([7, 12, 11, 14], fill=(139, 69, 19))
+    # Guard
+    draw.rectangle([6, 11, 12, 12], fill=(205, 127, 50))
+
+# List of all sprites to create
 sprites = [
     ('player', 16, draw_player),
     ('tree', 16, draw_tree),
@@ -203,7 +308,21 @@ sprites = [
     ('castle_stairs', 16, draw_castle_stairs),
     ('bridge', 16, draw_bridge),
     ('path', 16, draw_path),
+    ('bronze_helmet', 16, draw_bronze_helmet),
+    ('bronze_platebody', 16, draw_bronze_platebody),
+    ('bronze_platelegs', 16, draw_bronze_platelegs),
+    ('bronze_sword', 16, draw_bronze_sword),  # Added bronze sword
+    ('bronze_axe', 16, draw_axe),  # Reusing axe sprite for bronze axe
+    ('fishing_rod', 16, draw_fishing_rod),
+    ('bait', 16, draw_bait),
+    ('tinderbox', 16, draw_tinderbox),
+    ('raw_shrimp', 16, draw_raw_shrimp),
+    ('cooked_shrimp', 16, draw_cooked_shrimp),
+    ('raw_trout', 16, draw_raw_trout),
+    ('cooked_trout', 16, draw_cooked_trout),
+    ('burnt_fish', 16, draw_burnt_fish),
 ]
 
+# Create all sprites
 for name, size, draw_func in sprites:
-    create_sprite(name, size, draw_func) 
+    create_sprite(name, size, draw_func)
