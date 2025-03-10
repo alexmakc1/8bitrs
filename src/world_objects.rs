@@ -1,6 +1,8 @@
 use ggez::{graphics::{self, Canvas}, GameResult};
 use ggez::glam::Vec2;
 use crate::sprites::SpriteManager;
+use crate::skills::Skills;
+use crate::inventory::{Item, ItemType, ToolType};
 
 #[derive(Debug, Clone)]
 pub enum ObjectType {
@@ -24,20 +26,21 @@ pub struct WorldObject {
     pub height: f32,
     pub object_type: ObjectType,
     pub blocks_movement: bool,
+    pub health: u8,
 }
 
 impl WorldObject {
     pub fn new(x: f32, y: f32, object_type: ObjectType) -> Self {
-        let (width, height, blocks_movement) = match object_type {
-            ObjectType::Wall | ObjectType::CastleWall => (40.0, 40.0, true),
-            ObjectType::Tree => (32.0, 32.0, true),
-            ObjectType::Water => (40.0, 40.0, true),
-            ObjectType::Road => (40.0, 40.0, false),
-            ObjectType::Fence => (40.0, 8.0, true),
-            ObjectType::CastleDoor => (40.0, 40.0, false),
-            ObjectType::CastleStairs => (40.0, 40.0, false),
-            ObjectType::Bridge => (40.0, 40.0, false),
-            ObjectType::Path => (40.0, 40.0, false),
+        let (width, height, blocks_movement, health) = match object_type {
+            ObjectType::Wall | ObjectType::CastleWall => (40.0, 40.0, true, 255),
+            ObjectType::Tree => (32.0, 32.0, true, 3),
+            ObjectType::Water => (40.0, 40.0, true, 255),
+            ObjectType::Road => (40.0, 40.0, false, 255),
+            ObjectType::Fence => (40.0, 8.0, true, 255),
+            ObjectType::CastleDoor => (40.0, 40.0, false, 255),
+            ObjectType::CastleStairs => (40.0, 40.0, false, 255),
+            ObjectType::Bridge => (40.0, 40.0, false, 255),
+            ObjectType::Path => (40.0, 40.0, false, 255),
         };
 
         Self {
@@ -47,6 +50,7 @@ impl WorldObject {
             height,
             object_type,
             blocks_movement,
+            health,
         }
     }
 
@@ -95,5 +99,25 @@ impl WorldObject {
         self_right > other_left &&
         self_top < other_bottom &&
         self_bottom > other_top
+    }
+
+    pub fn is_chopped(&self) -> bool {
+        matches!(self.object_type, ObjectType::Tree) && self.health == 0
+    }
+
+    pub fn try_chop(&mut self, skills: &Skills, axe: Option<&Item>) -> bool {
+        if self.is_chopped() || !matches!(self.object_type, ObjectType::Tree) {
+            return false;
+        }
+
+        if let Some(item) = axe {
+            if let ItemType::Tool(ToolType::Axe { woodcutting_level }) = &item.item_type {
+                if u32::from(skills.woodcutting.get_level()) >= *woodcutting_level {
+                    self.health -= 1;
+                    return true;
+                }
+            }
+        }
+        false
     }
 } 

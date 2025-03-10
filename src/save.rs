@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use ggez::Context;
 
 use crate::skills::Skills;
 use crate::inventory::Inventory;
@@ -26,26 +27,50 @@ pub struct SaveData {
 }
 
 impl SaveData {
-    pub fn save_to_file(&self, filename: &str) -> std::io::Result<()> {
+    fn get_save_path(ctx: &Context) -> PathBuf {
+        let mut path = ctx.fs.user_config_dir().to_path_buf();
+        path.push("save_game.json");
+        path
+    }
+
+    pub fn save_to_file(&self, ctx: &Context) -> std::io::Result<()> {
         let json = serde_json::to_string_pretty(self)?;
-        fs::write(filename, json)?;
-        println!("Game saved successfully!");
+        let save_path = Self::get_save_path(ctx);
+        
+        // Create parent directories if they don't exist
+        if let Some(parent) = save_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        
+        // Write the save file
+        fs::write(&save_path, json)?;
+        println!("Game saved to: {}", save_path.display());
         Ok(())
     }
 
-    pub fn load_from_file(filename: &str) -> std::io::Result<Option<SaveData>> {
-        if !Path::new(filename).exists() {
+    pub fn load_from_file(ctx: &Context) -> std::io::Result<Option<SaveData>> {
+        let save_path = Self::get_save_path(ctx);
+        
+        if !save_path.exists() {
+            println!("No save file found at: {}", save_path.display());
             return Ok(None);
         }
 
-        let json = fs::read_to_string(filename)?;
-        match serde_json::from_str(&json) {
-            Ok(save_data) => {
-                println!("Game loaded successfully!");
-                Ok(Some(save_data))
-            },
+        match fs::read_to_string(&save_path) {
+            Ok(json) => {
+                match serde_json::from_str(&json) {
+                    Ok(save_data) => {
+                        println!("Successfully loaded save from: {}", save_path.display());
+                        Ok(Some(save_data))
+                    }
+                    Err(e) => {
+                        println!("Error parsing save file: {}", e);
+                        Ok(None)
+                    }
+                }
+            }
             Err(e) => {
-                println!("Error loading save file: {}", e);
+                println!("Error reading save file: {}", e);
                 Ok(None)
             }
         }

@@ -118,12 +118,17 @@ pub struct GameUI {
     mouse_y: f32,
     skills_menu_visible: bool,
     sprite_manager: &'static SpriteManager,
+    menu_bar_height: f32,
+    messages: Vec<String>,
+    max_messages: usize,
+    message_scroll: f32,
+    message_window_height: f32,
 }
 
 impl GameUI {
     pub fn new(sprite_manager: &'static SpriteManager) -> Self {
         Self {
-            inventory_visible: false,
+            inventory_visible: true,
             context_menu: ContextMenu::new(),
             selected_slot: None,
             tooltip_text: None,
@@ -131,15 +136,66 @@ impl GameUI {
             mouse_y: 0.0,
             skills_menu_visible: false,
             sprite_manager,
+            menu_bar_height: 40.0,
+            messages: Vec::new(),
+            max_messages: 50,
+            message_scroll: 0.0,
+            message_window_height: 150.0,
+        }
+    }
+
+    pub fn add_message(&mut self, message: String) {
+        self.messages.push(message);
+        if self.messages.len() > self.max_messages {
+            self.messages.remove(0);
+        }
+        self.message_scroll = 0.0;
+    }
+
+    fn wrap_text(&self, text: &str, max_width: f32) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+        let mut current_width = 0.0;
+        let font_width = 8.0; // Approximate width of each character in pixels
+
+        for word in text.split_whitespace() {
+            let word_width = word.len() as f32 * font_width;
+            let space_width = if current_line.is_empty() { 0.0 } else { font_width };
+
+            if current_width + word_width + space_width > max_width {
+                if !current_line.is_empty() {
+                    lines.push(current_line.trim().to_string());
+                }
+                current_line = word.to_string();
+                current_width = word_width;
+            } else {
+                if !current_line.is_empty() {
+                    current_line.push(' ');
+                }
+                current_line.push_str(word);
+                current_width += word_width + space_width;
+            }
+        }
+
+        if !current_line.is_empty() {
+            lines.push(current_line.trim().to_string());
+        }
+
+        lines
+    }
+
+    pub fn toggle_skills_menu(&mut self) {
+        self.skills_menu_visible = !self.skills_menu_visible;
+        if self.skills_menu_visible {
+            self.inventory_visible = false;
         }
     }
 
     pub fn toggle_inventory(&mut self) {
         self.inventory_visible = !self.inventory_visible;
-    }
-
-    pub fn toggle_skills_menu(&mut self) {
-        self.skills_menu_visible = !self.skills_menu_visible;
+        if self.inventory_visible {
+            self.skills_menu_visible = false;
+        }
     }
 
     pub fn is_menu_visible(&self) -> bool {
@@ -168,30 +224,71 @@ impl GameUI {
     }
 
     pub fn draw(&mut self, canvas: &mut Canvas, skills: &Skills, inventory: &Inventory, equipment: &Equipment, dropped_items: &[DroppedItem], player_x: f32, player_y: f32, entities: &[Entity], trees: &[Tree], fishing_spots: &[FishingSpot]) -> GameResult {
-        // Clear tooltip at start of draw
         self.tooltip_text = None;
 
-        // Draw inventory if visible
-        if self.inventory_visible {
-            // Draw inventory background
+        let screen_height = 768.0; // Window height
+        let menu_y = screen_height - self.menu_bar_height;
+        let message_y = menu_y - self.message_window_height;
+
+        canvas.draw(
+            &graphics::Quad,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(0.0, message_y))
+                .scale(Vec2::new(1024.0, self.message_window_height))
+                .color(Color::new(0.0, 0.0, 0.0, 0.8)),
+        );
+
+        let mut y = message_y + 10.0;
+        let max_width = 1000.0;
+        let line_height = 20.0;
+
+        for message in self.messages.iter().rev() {
+            let wrapped_lines = self.wrap_text(message, max_width);
+            
+            for line in wrapped_lines.iter().rev() {
+                let line_text = graphics::Text::new(line.clone());
+                canvas.draw(
+                    &line_text,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(10.0, y + self.message_scroll))
+                        .color(Color::WHITE),
+                );
+                y += line_height;
+            }
+        }
+
+        let scroll_bar_height = 10.0;
+        let scroll_bar_y = menu_y - scroll_bar_height;
+        let scroll_percent = (self.message_scroll / (self.message_window_height - 20.0)).clamp(0.0, 1.0);
+        let scroll_bar_x = scroll_percent * (1024.0 - 20.0);
+        
+        canvas.draw(
+            &graphics::Quad,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(scroll_bar_x, scroll_bar_y))
+                .scale(Vec2::new(20.0, scroll_bar_height))
+                .color(Color::WHITE),
+        );
+
+        if self.inventory_visible || self.skills_menu_visible {
             canvas.draw(
                 &graphics::Quad,
                 graphics::DrawParam::new()
-                    .dest(Vec2::new(50.0, 80.0))
+                    .dest(Vec2::new(10.0, 10.0))
                     .scale(Vec2::new(220.0, 340.0))
                     .color(Color::new(0.0, 0.0, 0.0, 0.8)),
             );
+        }
 
-            // Draw equipment section
+        if self.inventory_visible {
             let equip_text = graphics::Text::new("Equipment:".to_string());
             canvas.draw(
                 &equip_text,
                 graphics::DrawParam::new()
-                    .dest(Vec2::new(70.0, 85.0))
+                    .dest(Vec2::new(30.0, 125.0))
                     .color(Color::WHITE),
             );
 
-            // Draw equipped items
             let equipped_items = [
                 ("Weapon", equipment.get_weapon()),
                 ("Head", equipment.get_armor(&ArmorSlot::Head)),
@@ -200,10 +297,9 @@ impl GameUI {
             ];
 
             for (i, (slot_name, item)) in equipped_items.iter().enumerate() {
-                let x = 70.0 + i as f32 * 45.0;
-                let y = 105.0;
+                let x = 30.0 + i as f32 * 45.0;
+                let y = 145.0;
 
-                // Draw slot background
                 canvas.draw(
                     &graphics::Quad,
                     graphics::DrawParam::new()
@@ -212,7 +308,6 @@ impl GameUI {
                         .color(Color::new(0.4, 0.4, 0.4, 0.8)),
                 );
 
-                // Draw slot label
                 let label = graphics::Text::new(slot_name.chars().next().unwrap_or('?').to_string());
                 canvas.draw(
                     &label,
@@ -221,18 +316,14 @@ impl GameUI {
                         .color(Color::new(0.7, 0.7, 0.7, 0.5)),
                 );
 
-                // Draw equipped item if any
                 if let Some(item) = item {
-                    // Check if mouse is hovering over this slot
                     if self.mouse_x >= x && self.mouse_x <= x + 40.0 && 
                        self.mouse_y >= y && self.mouse_y <= y + 40.0 {
                         self.tooltip_text = Some(format!("Equipped: {}", item.name));
                     }
 
-                    // Convert item name to sprite name
                     let sprite_name = item.name.to_lowercase().replace(" ", "_");
                     
-                    // Draw item sprite
                     if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
                         canvas.draw(
                             sprite,
@@ -242,7 +333,6 @@ impl GameUI {
                         );
                     } else {
                         println!("Missing sprite for item: {}", sprite_name);
-                        // Fallback to letter if sprite not found
                         let text = graphics::Text::new(item.name.chars().next().unwrap_or('?').to_string());
                         canvas.draw(
                             &text,
@@ -254,23 +344,20 @@ impl GameUI {
                 }
             }
 
-            // Draw inventory section
             let inv_text = graphics::Text::new("Inventory:".to_string());
             canvas.draw(
                 &inv_text,
                 graphics::DrawParam::new()
-                    .dest(Vec2::new(70.0, 155.0))
+                    .dest(Vec2::new(30.0, 195.0))
                     .color(Color::WHITE),
             );
 
-            // Draw inventory slots
             for i in 0..28 {
                 let row = i / 4;
                 let col = i % 4;
-                let x = 70.0 + col as f32 * 45.0;
-                let y = 175.0 + row as f32 * 45.0;
+                let x = 30.0 + col as f32 * 45.0;
+                let y = 215.0 + row as f32 * 45.0;
 
-                // Draw slot background
                 let slot_color = if Some(i) == self.selected_slot {
                     Color::new(0.5, 0.5, 0.5, 0.8)
                 } else {
@@ -285,18 +372,14 @@ impl GameUI {
                         .color(slot_color),
                 );
 
-                // Draw item in slot if it exists
                 if let Some(item) = inventory.get_items().get(i).and_then(|opt| opt.as_ref()) {
-                    // Check if mouse is hovering over this slot
                     if self.mouse_x >= x && self.mouse_x <= x + 40.0 && 
                        self.mouse_y >= y && self.mouse_y <= y + 40.0 {
                         self.tooltip_text = Some(item.name.clone());
                     }
 
-                    // Convert item name to sprite name
                     let sprite_name = item.name.to_lowercase().replace(" ", "_");
                     
-                    // Draw item sprite
                     if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
                         canvas.draw(
                             sprite,
@@ -306,7 +389,6 @@ impl GameUI {
                         );
                     } else {
                         println!("Missing sprite for item: {}", sprite_name);
-                        // Fallback to letter if sprite not found
                         let text = graphics::Text::new(item.name.chars().next().unwrap_or('?').to_string());
                         canvas.draw(
                             &text,
@@ -319,19 +401,16 @@ impl GameUI {
             }
         }
 
-        // Draw skills menu if visible
         if self.skills_menu_visible {
-            // Draw skills background
+            let skills_text = graphics::Text::new("Skills:".to_string());
             canvas.draw(
-                &graphics::Quad,
+                &skills_text,
                 graphics::DrawParam::new()
-                    .dest(Vec2::new(300.0, 80.0))
-                    .scale(Vec2::new(250.0, 300.0))
-                    .color(Color::new(0.0, 0.0, 0.0, 0.8)),
+                    .dest(Vec2::new(30.0, 125.0))
+                    .color(Color::WHITE),
             );
 
-            // Draw skill levels and XP
-            let mut y = 100.0;
+            let mut y = 145.0;
             let skills_text = [
                 ("Attack", &skills.attack),
                 ("Strength", &skills.strength),
@@ -347,17 +426,68 @@ impl GameUI {
                 canvas.draw(
                     &text,
                     graphics::DrawParam::new()
-                        .dest(Vec2::new(320.0, y))
+                        .dest(Vec2::new(30.0, y))
                         .color(Color::WHITE),
                 );
                 y += 30.0;
             }
         }
 
-        // Draw context menu if visible
+        canvas.draw(
+            &graphics::Quad,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(0.0, menu_y))
+                .scale(Vec2::new(1024.0, self.menu_bar_height))
+                .color(Color::new(0.0, 0.0, 0.0, 0.8)),
+        );
+
+        let button_width = 100.0;
+        let button_height = 30.0;
+        let button_spacing = 10.0;
+        let start_x = 10.0;
+
+        let inventory_button_color = if self.inventory_visible {
+            Color::new(0.5, 0.5, 0.5, 1.0)
+        } else {
+            Color::new(0.3, 0.3, 0.3, 1.0)
+        };
+        canvas.draw(
+            &graphics::Quad,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(start_x, menu_y + 5.0))
+                .scale(Vec2::new(button_width, button_height))
+                .color(inventory_button_color),
+        );
+        let inventory_text = graphics::Text::new("Inventory");
+        canvas.draw(
+            &inventory_text,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(start_x + 10.0, menu_y + 10.0))
+                .color(Color::WHITE),
+        );
+
+        let stats_button_color = if self.skills_menu_visible {
+            Color::new(0.5, 0.5, 0.5, 1.0)
+        } else {
+            Color::new(0.3, 0.3, 0.3, 1.0)
+        };
+        canvas.draw(
+            &graphics::Quad,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(start_x + button_width + button_spacing, menu_y + 5.0))
+                .scale(Vec2::new(button_width, button_height))
+                .color(stats_button_color),
+        );
+        let stats_text = graphics::Text::new("Stats");
+        canvas.draw(
+            &stats_text,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(start_x + button_width + button_spacing + 10.0, menu_y + 10.0))
+                .color(Color::WHITE),
+        );
+
         self.context_menu.draw(canvas)?;
 
-        // Draw tooltip if there is one
         if let Some(text) = &self.tooltip_text {
             let tooltip_text = graphics::Text::new(text.clone());
             canvas.draw(
@@ -369,5 +499,40 @@ impl GameUI {
         }
 
         Ok(())
+    }
+
+    pub fn handle_menu_click(&mut self, x: f32, y: f32) -> bool {
+        let screen_height = 768.0; // Window height
+        let menu_y = screen_height - self.menu_bar_height;
+        let message_y = menu_y - self.message_window_height;
+
+        if y >= message_y && y < menu_y {
+            if y > menu_y - 20.0 {
+                let scroll_percent = (x / 1024.0).clamp(0.0, 1.0);
+                self.message_scroll = scroll_percent * (self.message_window_height - 20.0);
+            }
+            return true;
+        }
+
+        if y >= menu_y && y <= screen_height {
+            let button_width = 100.0;
+            let button_height = 30.0;
+            let button_spacing = 10.0;
+            let start_x = 10.0;
+
+            if x >= start_x && x <= start_x + button_width && 
+               y >= menu_y + 5.0 && y <= menu_y + 5.0 + button_height {
+                self.toggle_inventory();
+                return true;
+            }
+
+            if x >= start_x + button_width + button_spacing && 
+               x <= start_x + button_width + button_spacing + button_width && 
+               y >= menu_y + 5.0 && y <= menu_y + 5.0 + button_height {
+                self.toggle_skills_menu();
+                return true;
+            }
+        }
+        false
     }
 } 

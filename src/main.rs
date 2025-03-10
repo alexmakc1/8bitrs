@@ -23,23 +23,23 @@ use skills::Skills;
 use ui::{GameUI, ContextMenuAction};
 use combat::Combat;
 use entity::Entity;
-use inventory::{Inventory, Item, DroppedItem, ItemType, ToolType, ResourceType};
+use inventory::{Inventory, Item, DroppedItem, ItemType, ToolType, ResourceType, ArmorSlot};
 use equipment::Equipment;
 use world::{Tree, Fire, FishingSpot, FishType};
 use save::{SaveData, create_save_data};
 use sprites::SpriteManager;
 use world_objects::{WorldObject, ObjectType};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum PendingAction {
-    ChopTree(f32, f32),
+    ChopTree(usize),
     PickupItem(usize),
     Attack,
     Fish(f32, f32),
     None,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum OngoingAction {
     ChoppingTree { x: f32, y: f32, tree_index: usize },
     Fighting { target_index: usize },
@@ -79,41 +79,76 @@ impl GameState {
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
         let sprite_manager = Box::leak(Box::new(SpriteManager::new(ctx)?));
         
-        let mut state = Self {
-            player_x: 512.0,
-            player_y: 384.0,
-            camera_x: 0.0,
-            camera_y: 0.0,
-            movement_speed: 4.0,
-            skills: Skills::new(),
-            game_ui: GameUI::new(sprite_manager),
-            player_combat: Combat::new(20),
-            entities: Vec::new(),
-            inventory: Inventory::new(28),
-            equipment: Equipment::new(),
-            dropped_items: Vec::new(),
-            trees: Vec::new(),
-            fires: Vec::new(),
-            fishing_spots: Vec::new(),
-            fishing_spot_timer: 0.0,
-            last_update: std::time::Instant::now(),
-            selected_item: None,
-            target_x: None,
-            target_y: None,
-            pending_action: PendingAction::None,
-            ongoing_action: OngoingAction::None,
-            action_timer: 0.0,
-            sprite_manager: &*sprite_manager,
-            world_objects: Vec::new(),
+        // Try to load saved game
+        let mut state = if let Ok(Some(save_data)) = SaveData::load_from_file(ctx) {
+            Self {
+                player_x: save_data.player_x,
+                player_y: save_data.player_y,
+                camera_x: 0.0,
+                camera_y: 0.0,
+                movement_speed: 4.0,
+                skills: save_data.skills,
+                game_ui: GameUI::new(sprite_manager),
+                player_combat: Combat::new(save_data.max_health),
+                entities: Vec::new(),
+                inventory: save_data.inventory,
+                equipment: save_data.equipment,
+                dropped_items: Vec::new(),
+                trees: Vec::new(),
+                fires: Vec::new(),
+                fishing_spots: Vec::new(),
+                fishing_spot_timer: 0.0,
+                last_update: std::time::Instant::now(),
+                selected_item: None,
+                target_x: None,
+                target_y: None,
+                pending_action: PendingAction::None,
+                ongoing_action: OngoingAction::None,
+                action_timer: 0.0,
+                sprite_manager: &*sprite_manager,
+                world_objects: Vec::new(),
+            }
+        } else {
+            // Create new game state
+            Self {
+                player_x: 512.0,
+                player_y: 384.0,
+                camera_x: 0.0,
+                camera_y: 0.0,
+                movement_speed: 4.0,
+                skills: Skills::new(),
+                game_ui: GameUI::new(sprite_manager),
+                player_combat: Combat::new(20),
+                entities: Vec::new(),
+                inventory: Inventory::new(28),
+                equipment: Equipment::new(),
+                dropped_items: Vec::new(),
+                trees: Vec::new(),
+                fires: Vec::new(),
+                fishing_spots: Vec::new(),
+                fishing_spot_timer: 0.0,
+                last_update: std::time::Instant::now(),
+                selected_item: None,
+                target_x: None,
+                target_y: None,
+                pending_action: PendingAction::None,
+                ongoing_action: OngoingAction::None,
+                action_timer: 0.0,
+                sprite_manager: &*sprite_manager,
+                world_objects: Vec::new(),
+            }
         };
 
-        // Add starting equipment
-        state.inventory.add_item(Item::bronze_sword());
-        state.inventory.add_item(Item::bronze_helmet());
-        state.inventory.add_item(Item::bronze_platebody());
-        state.inventory.add_item(Item::bronze_platelegs());
-        state.inventory.add_item(Item::bronze_axe());
-        state.inventory.add_item(Item::tinderbox());
+        // Add starting equipment only for new games
+        if state.inventory.get_items().iter().all(|item| item.is_none()) {
+            state.inventory.add_item(Item::bronze_sword());
+            state.inventory.add_item(Item::bronze_helmet());
+            state.inventory.add_item(Item::bronze_platebody());
+            state.inventory.add_item(Item::bronze_platelegs());
+            state.inventory.add_item(Item::bronze_axe());
+            state.inventory.add_item(Item::tinderbox());
+            state.inventory.add_item(Item::fishing_rod());
+        }
 
         state.spawn_world_objects();
         Ok(state)
@@ -140,8 +175,8 @@ impl GameState {
         for &(center_x, center_y, density) in &forest_regions {
             for dx in -3..=3 {
                 for dy in -3..=3 {
-                    let x = center_x + dx as f32 * 40.0 + rng.gen_range(-10.0..10.0);
-                    let y = center_y + dy as f32 * 40.0 + rng.gen_range(-10.0..10.0);
+                    let x = center_x + dx as f32 * 80.0 + rng.gen_range(-20.0..20.0);
+                    let y = center_y + dy as f32 * 80.0 + rng.gen_range(-20.0..20.0);
                     
                     // Higher chance of trees near center and based on density
                     let distance = ((dx * dx + dy * dy) as f32).sqrt();
@@ -175,6 +210,7 @@ impl GameState {
     fn check_collision(&self, x: f32, y: f32) -> bool {
         const PLAYER_SIZE: f32 = 32.0;
         
+        // Only check collision with world objects, not entities
         for obj in &self.world_objects {
             if obj.collides_with(x, y, PLAYER_SIZE, PLAYER_SIZE) {
                 return true;
@@ -189,7 +225,7 @@ impl GameState {
             let dy = target_y - self.player_y;
             let distance = (dx * dx + dy * dy).sqrt();
 
-            if distance > 5.0 {
+            if distance > 40.0 {
                 let speed = self.movement_speed * dt * 60.0;
                 let move_x = (dx / distance) * speed;
                 let move_y = (dy / distance) * speed;
@@ -210,12 +246,15 @@ impl GameState {
                 self.target_y = None;
                 
                 match self.pending_action.clone() {
-                    PendingAction::ChopTree(x, y) => {
-                        if let Some((index, _)) = self.trees.iter().enumerate()
-                            .find(|(_, t)| t.is_near(x, y) && !t.is_chopped())
-                        {
-                            self.ongoing_action = OngoingAction::ChoppingTree { x, y, tree_index: index };
-                            self.action_timer = 0.0; // Start chopping immediately
+                    PendingAction::ChopTree(tree_index) => {
+                        if tree_index < self.world_objects.len() {
+                            let tree = &self.world_objects[tree_index];
+                            self.ongoing_action = OngoingAction::ChoppingTree { 
+                                x: tree.x, 
+                                y: tree.y, 
+                                tree_index 
+                            };
+                            self.action_timer = 0.0;
                         }
                     }
                     PendingAction::Attack => {
@@ -223,7 +262,7 @@ impl GameState {
                             .find(|(_, e)| e.is_near(self.player_x, self.player_y) && e.is_alive())
                         {
                             self.ongoing_action = OngoingAction::Fighting { target_index: index };
-                            self.action_timer = 0.0; // Attack immediately
+                            self.action_timer = 0.0;
                         }
                     }
                     PendingAction::Fish(x, y) => {
@@ -231,7 +270,7 @@ impl GameState {
                             .find(|(_, s)| s.is_near(x, y))
                         {
                             self.ongoing_action = OngoingAction::Fishing { x, y, spot_index: index };
-                            self.action_timer = 0.0; // Start fishing immediately
+                            self.action_timer = 0.0;
                         }
                     }
                     PendingAction::PickupItem(index) => {
@@ -239,9 +278,9 @@ impl GameState {
                             let dropped_item = &self.dropped_items[index];
                             if self.inventory.add_item(dropped_item.item.clone()) {
                                 self.dropped_items.remove(index);
-                                println!("You pick up the item.");
+                                self.game_ui.add_message("You pick up the item.".to_string());
                             } else {
-                                println!("Your inventory is full.");
+                                self.game_ui.add_message("Your inventory is full.".to_string());
                             }
                         }
                     }
@@ -252,7 +291,7 @@ impl GameState {
         }
     }
 
-    fn save_game(&self) {
+    fn save_game(&mut self, ctx: &Context) {
         let save_data = create_save_data(
             self.player_x,
             self.player_y,
@@ -262,12 +301,14 @@ impl GameState {
             &self.equipment,
         );
 
-        if let Err(e) = save_data.save_to_file("save_game.json") {
-            println!("Error saving game: {}", e);
+        match save_data.save_to_file(ctx) {
+            Ok(_) => self.game_ui.add_message("Game saved successfully!".to_string()),
+            Err(e) => self.game_ui.add_message(format!("Error saving game: {}", e)),
         }
     }
 
     fn set_destination(&mut self, x: f32, y: f32, action: PendingAction) {
+        println!("Setting destination to ({}, {}) with action: {:?}", x, y, action);
         self.target_x = Some(x);
         self.target_y = Some(y);
         self.pending_action = action;
@@ -295,18 +336,17 @@ impl GameState {
         if self.action_timer <= 0.0 {
             match &self.ongoing_action.clone() {
                 OngoingAction::ChoppingTree { x, y, tree_index } => {
-                    if *tree_index < self.trees.len() {
-                        let tree = &mut self.trees[*tree_index];
-                        if tree.is_chopped() {
-                            self.cancel_ongoing_action();
-                            return;
-                        }
-
-                        // Check if we're still in range
-                        let dx = *x - self.player_x;
-                        let dy = *y - self.player_y;
-                        if (dx * dx + dy * dy).sqrt() > 40.0 {
-                            self.set_destination(*x, *y, PendingAction::ChopTree(*x, *y));
+                    if *tree_index < self.world_objects.len() {
+                        let tree = &mut self.world_objects[*tree_index];
+                        let tree_x = tree.x;
+                        let tree_y = tree.y;
+                        
+                        let dx = tree_x - self.player_x;
+                        let dy = tree_y - self.player_y;
+                        let distance = (dx * dx + dy * dy).sqrt();
+                        
+                        if distance > 40.0 {
+                            self.set_destination(tree_x, tree_y, PendingAction::ChopTree(*tree_index));
                             return;
                         }
 
@@ -316,15 +356,15 @@ impl GameState {
 
                         if tree.try_chop(&self.skills, axe) {
                             if self.inventory.add_item(Item::logs()) {
-                                println!("You get some logs.");
                                 self.skills.gain_woodcutting_xp(25);
-                                self.action_timer = 3.0; // Set timer for next chop
+                                self.game_ui.add_message("You get some logs.".to_string());
+                                self.action_timer = 3.0;
                             } else {
-                                println!("Your inventory is full.");
+                                self.game_ui.add_message("Your inventory is full.".to_string());
                                 self.cancel_ongoing_action();
                             }
                         } else {
-                            self.action_timer = 3.0; // Try again in 3 seconds
+                            self.cancel_ongoing_action();
                         }
                     } else {
                         self.cancel_ongoing_action();
@@ -338,7 +378,6 @@ impl GameState {
                             return;
                         }
 
-                        // Check if we're still in range
                         if !target.is_near(self.player_x, self.player_y) {
                             let target_pos = target.get_position();
                             self.set_destination(target_pos.0, target_pos.1, PendingAction::Attack);
@@ -346,7 +385,7 @@ impl GameState {
                         }
 
                         self.attack_nearest_goblin();
-                        self.action_timer = 2.4; // Set timer for next attack (typical RuneScape attack speed)
+                        self.action_timer = 2.4;
                     } else {
                         self.cancel_ongoing_action();
                     }
@@ -355,7 +394,6 @@ impl GameState {
                     if *spot_index < self.fishing_spots.len() {
                         let spot = &self.fishing_spots[*spot_index];
                         
-                        // Check if we're still in range
                         let dx = *x - self.player_x;
                         let dy = *y - self.player_y;
                         if (dx * dx + dy * dy).sqrt() > 40.0 {
@@ -363,7 +401,6 @@ impl GameState {
                             return;
                         }
 
-                        // Find fishing rod and check for bait
                         let rod = self.inventory.get_items().iter()
                             .filter_map(|item| item.as_ref())
                             .find(|item| matches!(&item.item_type, ItemType::Tool(ToolType::FishingRod { .. })));
@@ -373,9 +410,7 @@ impl GameState {
                             .any(|item| matches!(&item.item_type, ItemType::Resource(ResourceType::Bait)));
 
                         if let Some(fish) = spot.try_fish(&self.skills, rod, has_bait) {
-                            // Remove bait if needed
                             if matches!(spot.fish_type, FishType::Trout) {
-                                // Find and remove one bait
                                 if let Some(bait_slot) = self.inventory.get_items().iter()
                                     .enumerate()
                                     .filter_map(|(i, item)| item.as_ref().map(|it| (i, it)))
@@ -387,19 +422,19 @@ impl GameState {
                             }
 
                             if self.inventory.add_item(fish.clone()) {
-                                println!("You catch a {}.", fish.name);
+                                self.game_ui.add_message(format!("You catch a {}.", fish.name));
                                 self.skills.gain_fishing_xp(match spot.fish_type {
                                     FishType::Shrimp => 10,
                                     FishType::Trout => 50,
                                 });
-                                self.action_timer = 3.0; // Set timer for next fishing attempt
+                                self.action_timer = 3.0;
                             } else {
-                                println!("Your inventory is full.");
+                                self.game_ui.add_message("Your inventory is full.".to_string());
                                 self.cancel_ongoing_action();
                             }
                         } else {
-                            println!("You fail to catch anything.");
-                            self.action_timer = 3.0; // Try again in 3 seconds
+                            self.game_ui.add_message("You fail to catch anything.".to_string());
+                            self.action_timer = 3.0;
                         }
                     } else {
                         self.cancel_ongoing_action();
@@ -411,7 +446,6 @@ impl GameState {
     }
 
     fn attack_nearest_goblin(&mut self) {
-        // Find the nearest goblin
         if let Some(goblin_index) = self.entities.iter()
             .enumerate()
             .filter(|(_, e)| e.is_near(self.player_x, self.player_y))
@@ -420,22 +454,17 @@ impl GameState {
         {
             let goblin = &mut self.entities[goblin_index];
             if let Some(goblin_combat) = goblin.get_combat_mut() {
-                // Get equipment bonuses
                 let attack_bonus = self.equipment.get_total_attack_bonus();
                 let strength_bonus = self.equipment.get_total_strength_bonus();
                 let defense_bonus = self.equipment.get_total_defense_bonus();
 
-                // Player attacks goblin
                 if let Some(damage) = self.player_combat.attack(&self.skills, &Skills::new(), attack_bonus, strength_bonus, 0) {
-                    println!("Player hits goblin for {} damage! (Attack: {}, Strength: {}, Defense: {})", 
-                        damage, attack_bonus, strength_bonus, defense_bonus);
+                    self.game_ui.add_message(format!("Player hits goblin for {} damage!", damage));
                     goblin_combat.take_damage(damage as i32);
-                    self.skills.gain_attack_xp(4); // Gain some attack XP
+                    self.skills.gain_attack_xp(4);
                     
-                    // If goblin dies
                     if goblin_combat.is_dead() {
-                        println!("Goblin defeated!");
-                        // Get drops and add them to the ground
+                        self.game_ui.add_message("Goblin defeated!".to_string());
                         if let Some(drops) = goblin.interact(&mut self.skills) {
                             for item in drops {
                                 self.dropped_items.push(DroppedItem::new(
@@ -445,90 +474,74 @@ impl GameState {
                                 ));
                             }
                         }
-                        // Gain combat XP for kill
                         self.skills.gain_attack_xp(10);
                         self.skills.gain_strength_xp(10);
                         self.skills.gain_defense_xp(10);
                     } else {
-                        // Goblin counterattacks
                         if let Some(damage) = goblin_combat.attack(&Skills::new(), &self.skills, 0, 0, defense_bonus) {
-                            println!("Goblin hits player for {} damage!", damage);
+                            self.game_ui.add_message(format!("Goblin hits player for {} damage!", damage));
                             self.player_combat.take_damage(damage as i32);
-                            self.skills.gain_defense_xp(4); // Gain some defense XP
+                            self.skills.gain_defense_xp(4);
                         } else {
-                            println!("Goblin misses!");
+                            self.game_ui.add_message("Goblin misses!".to_string());
                         }
                     }
                 } else {
-                    println!("Player misses!");
+                    self.game_ui.add_message("Player misses!".to_string());
                 }
             }
         }
     }
 
     fn handle_inventory_click(&mut self, slot: usize, button: MouseButton) {
-        println!("Handling inventory click for slot {} with button {:?}", slot, button);
         if let Some(item) = self.inventory.get_item(slot) {
-            println!("Found item: {}", item.name);
             match button {
                 MouseButton::Left => {
                     if let Some(selected_slot) = self.selected_item {
-                        println!("Have selected slot: {}", selected_slot);
-                        // Handle item-on-item interaction
                         if let Some(selected_item) = self.inventory.get_item(selected_slot) {
-                            println!("Attempting to use {} on {}", selected_item.name, item.name);
                             match (&selected_item.item_type, &item.item_type) {
                                 (ItemType::Tool(ToolType::Tinderbox), ItemType::Resource(ResourceType::Logs { firemaking_level })) |
                                 (ItemType::Resource(ResourceType::Logs { firemaking_level }), ItemType::Tool(ToolType::Tinderbox)) => {
                                     if u32::from(self.skills.firemaking.get_level()) >= *firemaking_level {
-                                        // Create fire at player's position
                                         self.fires.push(Fire::new(self.player_x, self.player_y));
-                                        // Remove logs (always remove from non-tinderbox slot)
                                         let logs_slot = if matches!(selected_item.item_type, ItemType::Tool(ToolType::Tinderbox)) {
                                             slot
                                         } else {
                                             selected_slot
                                         };
                                         if self.inventory.remove_item(logs_slot).is_some() {
-                                            // Grant firemaking XP
                                             self.skills.gain_firemaking_xp(40);
-                                            println!("You light a fire.");
+                                            self.game_ui.add_message("You light a fire.".to_string());
                                         }
                                     } else {
-                                        println!("You need level {} Firemaking to light these logs.", firemaking_level);
+                                        self.game_ui.add_message(format!("You need level {} Firemaking to light these logs.", firemaking_level));
                                     }
                                 }
                                 _ => {
-                                    // Check if trying to cook fish on fire
                                     if let ItemType::Resource(ResourceType::RawFish { cooking_level, .. }) = &item.item_type {
-                                        // Find nearby fire
                                         if let Some(fire) = self.fires.iter()
                                             .find(|f| f.is_near(self.player_x, self.player_y))
                                         {
                                             if u32::from(self.skills.cooking.get_level()) >= *cooking_level {
-                                                // Clone the item before we start modifying the inventory
                                                 let raw_fish = item.clone();
                                                 
-                                                // Try to cook the fish
                                                 if let Some(cooked_item) = fire.try_cook(&raw_fish, self.skills.cooking.get_level()) {
-                                                    // Remove raw fish
                                                     self.inventory.remove_item(slot);
-                                                    // Add cooked/burnt fish
                                                     if self.inventory.add_item(cooked_item.clone()) {
                                                         match cooked_item.name.as_str() {
-                                                            "Burnt Fish" => println!("You accidentally burn the fish."),
+                                                            "Burnt Fish" => self.game_ui.add_message("You accidentally burn the fish.".to_string()),
                                                             _ => {
-                                                                println!("You successfully cook the {}.", raw_fish.name.strip_prefix("Raw ").unwrap_or(&raw_fish.name));
+                                                                self.game_ui.add_message(format!("You successfully cook the {}.", raw_fish.name.strip_prefix("Raw ").unwrap_or(&raw_fish.name)));
                                                                 self.skills.gain_cooking_xp(30);
                                                             }
                                                         }
                                                     }
                                                 }
                                             } else {
-                                                println!("You need level {} Cooking to cook this fish.", cooking_level);
+                                                self.game_ui.add_message(format!("You need level {} Cooking to cook this fish.", cooking_level));
                                             }
                                         } else {
-                                            println!("You need to be near a fire to cook food.");
+                                            self.game_ui.add_message("You need to be near a fire to cook food.".to_string());
                                         }
                                     }
                                 }
@@ -537,40 +550,34 @@ impl GameState {
                         self.selected_item = None;
                         self.game_ui.clear_selection();
                     } else {
-                        // Select item for use
-                        self.selected_item = Some(slot);
-                        self.game_ui.select_slot(slot);
-                        println!("Selected slot {} with item {}", slot, item.name);
+                        // Handle equipment when clicking directly on an item
                         match &item.item_type {
-                            ItemType::Tool(ToolType::Tinderbox) => {
-                                println!("Use the tinderbox on logs to light them.");
-                            }
-                            ItemType::Resource(ResourceType::Logs { .. }) => {
-                                println!("Use a tinderbox on the logs to light them.");
-                            }
                             ItemType::Weapon(_) | ItemType::Armor(_) => {
-                                // Handle equipment
-                                if let Some(item) = self.inventory.remove_item(slot) {
-                                    let old_item = match &item.item_type {
-                                        ItemType::Weapon(_) => self.equipment.equip_weapon(item),
-                                        ItemType::Armor(_) => self.equipment.equip_armor(item),
-                                        _ => None,
-                                    };
-                                    
-                                    if let Some(old_item) = old_item {
-                                        self.inventory.add_item(old_item);
+                                if item.can_equip() {
+                                    if let Some(item) = self.inventory.remove_item(slot) {
+                                        let item_name = item.name.clone();
+                                        let old_item = match &item.item_type {
+                                            ItemType::Weapon(_) => self.equipment.equip_weapon(item),
+                                            ItemType::Armor(_) => self.equipment.equip_armor(item),
+                                            _ => None,
+                                        };
+                                        
+                                        if let Some(old_item) = old_item {
+                                            self.inventory.add_item(old_item);
+                                        }
+                                        self.game_ui.add_message(format!("Equipped {}", item_name));
                                     }
+                                } else {
+                                    self.game_ui.add_message("You cannot equip this item.".to_string());
                                 }
-                                self.selected_item = None;
-                                self.game_ui.clear_selection();
                             }
                             ItemType::Food(_) => {
-                                // Use item (like eating food)
                                 self.inventory.use_item(slot, &mut self.player_combat);
-                                self.selected_item = None;
-                                self.game_ui.clear_selection();
                             }
-                            _ => {}
+                            _ => {
+                                self.selected_item = Some(slot);
+                                self.game_ui.select_slot(slot);
+                            }
                         }
                     }
                 }
@@ -599,33 +606,41 @@ impl GameState {
 
             if distance < pickup_range && item.can_pickup() {
                 if self.inventory.add_item(item.item.clone()) {
-                    println!("You picked up a {}.", item.item.name);
-                    return false; // Remove item from ground
+                    self.game_ui.add_message(format!("You picked up a {}.", item.item.name));
+                    return false;
                 }
             }
-            true // Keep item on ground
+            true
         });
     }
 
     fn try_chop_tree(&mut self) {
-        // Find the nearest tree
-        if let Some(tree) = self.trees.iter_mut()
-            .filter(|t| t.is_near(self.player_x, self.player_y))
-            .find(|t| !t.is_chopped())
+        if let Some((index, tree)) = self.world_objects.iter().enumerate()
+            .find(|(_, obj)| {
+                let dx = obj.x - self.player_x;
+                let dy = obj.y - self.player_y;
+                (dx * dx + dy * dy).sqrt() < 40.0 && matches!(obj.object_type, ObjectType::Tree)
+            })
         {
-            // Find axe in inventory
             let axe = self.inventory.get_items().iter()
                 .filter_map(|item| item.as_ref())
                 .find(|item| matches!(&item.item_type, ItemType::Tool(ToolType::Axe { .. })));
 
-            if tree.try_chop(&self.skills, axe) {
-                // Add logs to inventory
-                if self.inventory.add_item(Item::logs()) {
-                    println!("You get some logs.");
-                    self.skills.gain_woodcutting_xp(25);
-                } else {
-                    println!("Your inventory is full.");
+            if let Some(axe) = axe {
+                if let ItemType::Tool(ToolType::Axe { woodcutting_level }) = &axe.item_type {
+                    if u32::from(self.skills.woodcutting.get_level()) >= *woodcutting_level {
+                        if self.inventory.add_item(Item::logs()) {
+                            self.game_ui.add_message("You get some logs.".to_string());
+                            self.skills.gain_woodcutting_xp(25);
+                        } else {
+                            self.game_ui.add_message("Your inventory is full.".to_string());
+                        }
+                    } else {
+                        self.game_ui.add_message(format!("You need level {} Woodcutting to use this axe.", woodcutting_level));
+                    }
                 }
+            } else {
+                self.game_ui.add_message("You need an axe to chop trees.".to_string());
             }
         }
     }
@@ -738,7 +753,29 @@ impl GameState {
     fn handle_context_action(&mut self, action: ContextMenuAction, x: f32, y: f32) {
         match action {
             ContextMenuAction::ChopTree => {
-                self.set_destination(x, y, PendingAction::ChopTree(x, y));
+                println!("ChopTree action initiated at coordinates: ({}, {})", x, y);
+                if let Some((index, obj)) = self.world_objects.iter().enumerate()
+                    .find(|(_, obj)| {
+                        let dx = obj.x - x;
+                        let dy = obj.y - y;
+                        (dx * dx + dy * dy).sqrt() < 40.0 && matches!(obj.object_type, ObjectType::Tree)
+                    })
+                {
+                    println!("Found tree at index {} with coordinates: ({}, {})", index, obj.x, obj.y);
+                    // Check if player has an axe
+                    let has_axe = self.inventory.get_items().iter()
+                        .filter_map(|item| item.as_ref())
+                        .any(|item| matches!(&item.item_type, ItemType::Tool(ToolType::Axe { .. })));
+
+                    if has_axe {
+                        println!("Player has an axe, setting destination to tree");
+                        self.set_destination(obj.x, obj.y, PendingAction::ChopTree(index));
+                    } else {
+                        println!("Player needs an axe to chop trees");
+                    }
+                } else {
+                    println!("No tree found near coordinates: ({}, {})", x, y);
+                }
             }
             ContextMenuAction::PickupItem => {
                 if let Some((index, _)) = self.dropped_items.iter().enumerate()
@@ -914,9 +951,8 @@ impl EventHandler for GameState {
     }
 
     fn mouse_button_down_event(&mut self, _ctx: &mut Context, button: MouseButton, x: f32, y: f32) -> GameResult {
-        // First check if we're clicking in the UI area
-        if y >= 0.0 && y <= 50.0 {
-            // UI bar click handling
+        // First check if we're clicking in the menu bar
+        if self.game_ui.handle_menu_click(x, y) {
             return Ok(());
         }
 
@@ -932,15 +968,54 @@ impl EventHandler for GameState {
         }
 
         if self.game_ui.inventory_visible {
-            // Check if click is in inventory area (adjusted coordinates)
-            if x >= 70.0 && x <= 250.0 && y >= 100.0 && y <= 400.0 {
-                let slot_x = ((x - 70.0) / 45.0).floor() as usize;
-                let slot_y = ((y - 100.0) / 45.0).floor() as usize;
-                let slot = slot_y * 4 + slot_x;
-                
-                if slot < self.inventory.get_items().len() {
-                    self.handle_inventory_click(slot, button);
+            // Check if click is in inventory area (shifted down by output window height)
+            if x >= 10.0 && x <= 230.0 && y >= 120.0 && y <= 460.0 {
+                // Check if click is in equipment area
+                if y >= 125.0 && y <= 165.0 && x >= 30.0 && x <= 210.0 {
+                    let slot_x = ((x - 30.0) / 45.0).floor() as usize;
+                    if slot_x < 4 {
+                        // Handle equipment slot click
+                        let slot = match slot_x {
+                            0 => None,  // Weapon slot
+                            1 => Some(ArmorSlot::Head),  // Head slot
+                            2 => Some(ArmorSlot::Body),  // Body slot
+                            3 => Some(ArmorSlot::Legs),  // Legs slot
+                            _ => None,
+                        };
+                        
+                        if let Some(slot) = slot {
+                            if let Some(item) = self.equipment.unequip_armor(slot) {
+                                if self.inventory.add_item(item.clone()) {
+                                    self.game_ui.add_message(format!("Unequipped {}", item.name));
+                                } else {
+                                    self.game_ui.add_message("Your inventory is full.".to_string());
+                                }
+                            }
+                        } else if slot_x == 0 {
+                            // Handle weapon slot
+                            if let Some(item) = self.equipment.unequip_weapon() {
+                                if self.inventory.add_item(item.clone()) {
+                                    self.game_ui.add_message(format!("Unequipped {}", item.name));
+                                } else {
+                                    self.game_ui.add_message("Your inventory is full.".to_string());
+                                }
+                            }
+                        }
+                    }
                 }
+                // Check if click is in inventory area
+                else if x >= 30.0 && x <= 210.0 && y >= 215.0 && y <= 455.0 {
+                    let slot_x = ((x - 30.0) / 45.0).floor() as usize;
+                    let slot_y = ((y - 215.0) / 45.0).floor() as usize;
+                    let slot = slot_y * 4 + slot_x;
+                    
+                    if slot < self.inventory.get_items().len() {
+                        self.handle_inventory_click(slot, button);
+                    }
+                }
+            } else {
+                // Click outside inventory - handle world interaction
+                self.handle_world_click(x, y, button);
             }
         } else if !self.game_ui.is_menu_visible() {
             // Only handle world clicks if no menu is visible
@@ -957,13 +1032,10 @@ impl EventHandler for GameState {
         Ok(())
     }
 
-    fn key_down_event(&mut self, _ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
+    fn key_down_event(&mut self, ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
         match input.keycode {
             Some(KeyCode::Tab) => {
                 self.game_ui.toggle_skills_menu();
-            }
-            Some(KeyCode::I) => {
-                self.game_ui.toggle_inventory();
             }
             Some(KeyCode::Space) => {
                 if !self.game_ui.is_menu_visible() {
@@ -982,7 +1054,7 @@ impl EventHandler for GameState {
             }
             Some(KeyCode::S) => {
                 if input.mods.contains(ggez::input::keyboard::KeyMods::CTRL) {
-                    self.save_game();
+                    self.save_game(ctx);
                 }
             }
             _ => {}
