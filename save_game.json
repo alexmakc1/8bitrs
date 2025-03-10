@@ -1,0 +1,184 @@
+{
+  "player_x": 241.45422,
+  "player_y": 681.6109,
+  "skills": {
+    "attack": {
+      "level": 2,
+      "experience": 112
+    },
+    "strength": {
+      "level": 1,
+      "experience": 20
+    },
+    "defense": {
+      "level": 1,
+      "experience": 52
+    },
+    "woodcutting": {
+      "level": 7,
+      "experience": 750
+    },
+    "firemaking": {
+      "level": 8,
+      "experience": 960
+    },
+    "fishing": {
+      "level": 1,
+      "experience": 80
+    },
+    "cooking": {
+      "level": 1,
+      "experience": 0
+    }
+  },
+  "health": 12,
+  "max_health": 20,
+  "inventory": {
+    "items": [
+      {
+        "name": "Logs",
+        "item_type": {
+          "Resource": {
+            "Logs": {
+              "firemaking_level": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "Logs",
+        "item_type": {
+          "Resource": {
+            "Logs": {
+              "firemaking_level": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "Logs",
+        "item_type": {
+          "Resource": {
+            "Logs": {
+              "firemaking_level": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "Logs",
+        "item_type": {
+          "Resource": {
+            "Logs": {
+              "firemaking_level": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "Bronze Axe",
+        "item_type": {
+          "Tool": {
+            "Axe": {
+              "woodcutting_level": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "Tinderbox",
+        "item_type": {
+          "Tool": "Tinderbox"
+        }
+      },
+      null,
+      {
+        "name": "Logs",
+        "item_type": {
+          "Resource": {
+            "Logs": {
+              "firemaking_level": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "Logs",
+        "item_type": {
+          "Resource": {
+            "Logs": {
+              "firemaking_level": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "Fishing Rod",
+        "item_type": {
+          "Tool": {
+            "FishingRod": {
+              "fishing_level": 1
+            }
+          }
+        }
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "capacity": 28
+  },
+  "equipment": {
+    "weapon": {
+      "name": "Bronze Sword",
+      "item_type": {
+        "Weapon": {
+          "attack_bonus": 4,
+          "strength_bonus": 3
+        }
+      }
+    },
+    "head": {
+      "name": "Bronze Helmet",
+      "item_type": {
+        "Armor": {
+          "defense_bonus": 3,
+          "slot": "Head"
+        }
+      }
+    },
+    "body": {
+      "name": "Bronze Platebody",
+      "item_type": {
+        "Armor": {
+          "defense_bonus": 5,
+          "slot": "Body"
+        }
+      }
+    },
+    "legs": {
+      "name": "Bronze Platelegs",
+      "item_type": {
+        "Armor": {
+          "defense_bonus": 4,
+          "slot": "Legs"
+        }
+      }
+    }
+  }
+}
