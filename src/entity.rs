@@ -36,6 +36,7 @@ impl DropTable {
 #[derive(Debug)]
 pub enum EntityType {
     Goblin(Combat),
+    Cow(Combat),
 }
 
 impl EntityType {
@@ -51,6 +52,13 @@ impl EntityType {
                     DropTableEntry { item: Item::fishing_rod, chance: 10.0 },     // 10% chance
                     DropTableEntry { item: Item::bait, chance: 25.0 },           // 25% chance
                     DropTableEntry { item: Item::tinderbox, chance: 10.0 },      // 10% chance
+                ],
+            },
+            EntityType::Cow(_) => DropTable {
+                entries: vec![
+                    DropTableEntry { item: Item::beef, chance: 100.0 },      // 100% chance
+                    DropTableEntry { item: Item::cow_hide, chance: 100.0 },  // 100% chance
+                    DropTableEntry { item: Item::bones, chance: 100.0 },     // 100% chance
                 ],
             },
         }
@@ -74,6 +82,15 @@ impl Entity {
         }
     }
 
+    pub fn new_cow(x: f32, y: f32) -> Self {
+        Entity {
+            x,
+            y,
+            entity_type: EntityType::Cow(Combat::new(8)), // Cows have 8 HP
+            respawn_timer: None,
+        }
+    }
+
     pub fn update(&mut self, dt: f32) {
         if let Some(timer) = &mut self.respawn_timer {
             *timer -= dt;
@@ -82,6 +99,7 @@ impl Entity {
                 // Reset goblin health
                 let combat = match &mut self.entity_type {
                     EntityType::Goblin(combat) => combat,
+                    EntityType::Cow(combat) => combat,
                 };
                 *combat = Combat::new(10);
             }
@@ -93,37 +111,56 @@ impl Entity {
     }
 
     pub fn draw_with_offset(&self, canvas: &mut Canvas, offset_x: f32, offset_y: f32, sprites: &SpriteManager) -> GameResult {
-        // Draw the entity sprite
-        if let Some(sprite) = sprites.get_sprite("goblin") {
-            canvas.draw(
-                sprite,
-                graphics::DrawParam::new()
-                    .dest(Vec2::new(self.x - offset_x - 16.0, self.y - offset_y - 16.0))
-                    .scale(Vec2::new(2.0, 2.0))
-            );
+        match &self.entity_type {
+            EntityType::Goblin(combat) => {
+                if !combat.is_dead() {
+                    if let Some(sprite) = sprites.get_sprite("goblin") {
+                        canvas.draw(
+                            sprite,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(self.x - offset_x - 16.0, self.y - offset_y - 16.0))
+                                .scale(Vec2::new(2.0, 2.0))
+                        );
+                    }
+                }
+            }
+            EntityType::Cow(combat) => {
+                if !combat.is_dead() {
+                    if let Some(sprite) = sprites.get_sprite("cow") {
+                        canvas.draw(
+                            sprite,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(self.x - offset_x - 16.0, self.y - offset_y - 16.0))
+                                .scale(Vec2::new(2.0, 2.0))
+                        );
+                    }
+                }
+            }
         }
 
-        // Draw health bar if entity has combat stats
-        if let Some(combat) = &self.get_combat() {
-            let health_percent = combat.health as f32 / combat.max_health as f32;
-            
-            // Black background
-            canvas.draw(
-                &graphics::Quad,
-                graphics::DrawParam::new()
-                    .dest(Vec2::new(self.x - offset_x - 16.0, self.y - offset_y - 26.0))
-                    .scale(Vec2::new(32.0, 5.0))
-                    .color(Color::BLACK)
-            );
+        // Draw health bar if entity is alive
+        if let Some(combat) = self.get_combat() {
+            if !combat.is_dead() {
+                let health_percent = combat.health as f32 / combat.max_health as f32;
+                
+                // Black background
+                canvas.draw(
+                    &graphics::Quad,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(self.x - offset_x - 16.0, self.y - offset_y - 26.0))
+                        .scale(Vec2::new(32.0, 5.0))
+                        .color(Color::BLACK)
+                );
 
-            // Green health bar
-            canvas.draw(
-                &graphics::Quad,
-                graphics::DrawParam::new()
-                    .dest(Vec2::new(self.x - offset_x - 16.0, self.y - offset_y - 26.0))
-                    .scale(Vec2::new(32.0 * health_percent, 5.0))
-                    .color(Color::GREEN)
-            );
+                // Green health bar
+                canvas.draw(
+                    &graphics::Quad,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(self.x - offset_x - 16.0, self.y - offset_y - 26.0))
+                        .scale(Vec2::new(32.0 * health_percent, 5.0))
+                        .color(Color::GREEN)
+                );
+            }
         }
 
         Ok(())
@@ -147,18 +184,26 @@ impl Entity {
                     None
                 }
             }
+            EntityType::Cow(combat) => {
+                if combat.is_dead() {
+                    self.respawn_timer = Some(5.0); // 5 seconds to respawn
+                    Some(self.get_drops())
+                } else {
+                    None
+                }
+            }
         }
     }
 
     pub fn get_combat(&self) -> Option<&Combat> {
         match &self.entity_type {
-            EntityType::Goblin(combat) => Some(combat),
+            EntityType::Goblin(combat) | EntityType::Cow(combat) => Some(combat),
         }
     }
 
     pub fn get_combat_mut(&mut self) -> Option<&mut Combat> {
         match &mut self.entity_type {
-            EntityType::Goblin(combat) => Some(combat),
+            EntityType::Goblin(combat) | EntityType::Cow(combat) => Some(combat),
         }
     }
 
@@ -171,7 +216,7 @@ impl Entity {
 
     pub fn is_alive(&self) -> bool {
         match &self.entity_type {
-            EntityType::Goblin(combat) => !combat.is_dead() && self.respawn_timer.is_none(),
+            EntityType::Goblin(combat) | EntityType::Cow(combat) => !combat.is_dead() && self.respawn_timer.is_none(),
         }
     }
 

@@ -48,6 +48,8 @@ pub enum ResourceType {
     RawFish { fishing_level: u32, cooking_level: u32, healing: u32 },
     CookedFish { healing: u32 },
     Bait,
+    Hide,
+    Bones,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +188,27 @@ impl Item {
         }
     }
 
+    pub fn beef() -> Self {
+        Item {
+            name: "Beef".to_string(),
+            item_type: ItemType::Food(4), // Heals 4 HP
+        }
+    }
+
+    pub fn cow_hide() -> Self {
+        Item {
+            name: "Cow Hide".to_string(),
+            item_type: ItemType::Resource(ResourceType::Hide),
+        }
+    }
+
+    pub fn bones() -> Self {
+        Item {
+            name: "Bones".to_string(),
+            item_type: ItemType::Resource(ResourceType::Bones),
+        }
+    }
+
     pub fn can_equip(&self) -> bool {
         matches!(self.item_type, ItemType::Weapon(_) | ItemType::Armor(_))
     }
@@ -240,6 +263,9 @@ impl DroppedItem {
             ItemType::Resource(ResourceType::Logs { .. }) => "logs",
             ItemType::Resource(ResourceType::RawFish { .. }) | 
             ItemType::Resource(ResourceType::CookedFish { .. }) => "fish",
+            ItemType::Resource(ResourceType::Hide) => "cow_hide",
+            ItemType::Resource(ResourceType::Bones) => "bones",
+            ItemType::Food(_) => "beef",
             _ => "sword", // Default to sword sprite for unknown items
         };
 

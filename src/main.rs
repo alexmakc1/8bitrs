@@ -29,6 +29,7 @@ use world::{Tree, Fire, FishingSpot, FishType};
 use save::{SaveData, create_save_data};
 use sprites::SpriteManager;
 use world_objects::{WorldObject, ObjectType};
+use crate::entity::EntityType;
 
 #[derive(Clone, Debug)]
 enum PendingAction {
@@ -203,6 +204,24 @@ impl GameState {
                 let x = center_x + angle.cos() * distance;
                 let y = center_y + angle.sin() * distance;
                 self.entities.push(Entity::new_goblin(x, y));
+            }
+        }
+
+        // Spawn cow herds
+        let cow_pastures = [
+            (0.0, 0.0, 5),      // Central pasture
+            (-300.0, 100.0, 3),  // Western pasture
+            (200.0, -200.0, 4)   // Northern pasture
+        ];
+
+        for &(center_x, center_y, count) in &cow_pastures {
+            // Spawn cows in a loose group
+            for _ in 0..count {
+                let angle = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+                let distance = rng.gen_range(0.0..100.0);
+                let x = center_x + angle.cos() * distance;
+                let y = center_y + angle.sin() * distance;
+                self.entities.push(Entity::new_cow(x, y));
             }
         }
     }
@@ -384,7 +403,7 @@ impl GameState {
                             return;
                         }
 
-                        self.attack_nearest_goblin();
+                        self.attack_nearest_entity();
                         self.action_timer = 2.4;
                     } else {
                         self.cancel_ongoing_action();
@@ -445,45 +464,49 @@ impl GameState {
         }
     }
 
-    fn attack_nearest_goblin(&mut self) {
-        if let Some(goblin_index) = self.entities.iter()
+    fn attack_nearest_entity(&mut self) {
+        if let Some(target_index) = self.entities.iter()
             .enumerate()
             .filter(|(_, e)| e.is_near(self.player_x, self.player_y))
             .find(|(_, e)| e.is_alive())
             .map(|(i, _)| i)
         {
-            let goblin = &mut self.entities[goblin_index];
-            if let Some(goblin_combat) = goblin.get_combat_mut() {
-                let attack_bonus = self.equipment.get_total_attack_bonus();
-                let strength_bonus = self.equipment.get_total_strength_bonus();
-                let defense_bonus = self.equipment.get_total_defense_bonus();
+            let target = &mut self.entities[target_index];
+            let attack_bonus = self.equipment.get_total_attack_bonus();
+            let strength_bonus = self.equipment.get_total_strength_bonus();
+            let defense_bonus = self.equipment.get_total_defense_bonus();
 
+            // Get target name first
+            let target_name = match &target.entity_type {
+                EntityType::Goblin(_) => "goblin",
+                EntityType::Cow(_) => "cow",
+            };
+
+            let (target_x, target_y) = target.get_position();
+
+            if let Some(target_combat) = target.get_combat_mut() {
                 if let Some(damage) = self.player_combat.attack(&self.skills, &Skills::new(), attack_bonus, strength_bonus, 0) {
-                    self.game_ui.add_message(format!("Player hits goblin for {} damage!", damage));
-                    goblin_combat.take_damage(damage as i32);
+                    self.game_ui.add_message(format!("You attack the {}!", target_name.chars().next().unwrap().to_uppercase().collect::<String>() + &target_name[1..]));
+                    target_combat.take_damage(damage as i32);
                     self.skills.gain_attack_xp(4);
                     
-                    if goblin_combat.is_dead() {
-                        self.game_ui.add_message("Goblin defeated!".to_string());
-                        if let Some(drops) = goblin.interact(&mut self.skills) {
+                    if target_combat.is_dead() {
+                        self.game_ui.add_message(format!("The {} is dead!", target_name.chars().next().unwrap().to_uppercase().collect::<String>() + &target_name[1..]));
+                        if let Some(drops) = target.interact(&mut self.skills) {
                             for item in drops {
-                                self.dropped_items.push(DroppedItem::new(
-                                    item,
-                                    goblin.get_position().0,
-                                    goblin.get_position().1,
-                                ));
+                                self.dropped_items.push(DroppedItem::new(item, target_x, target_y));
                             }
                         }
                         self.skills.gain_attack_xp(10);
                         self.skills.gain_strength_xp(10);
                         self.skills.gain_defense_xp(10);
                     } else {
-                        if let Some(damage) = goblin_combat.attack(&Skills::new(), &self.skills, 0, 0, defense_bonus) {
-                            self.game_ui.add_message(format!("Goblin hits player for {} damage!", damage));
+                        if let Some(damage) = target_combat.attack(&Skills::new(), &self.skills, 0, 0, defense_bonus) {
+                            self.game_ui.add_message(format!("You hit the {} for {} damage!", target_name.chars().next().unwrap().to_uppercase().collect::<String>() + &target_name[1..], damage));
                             self.player_combat.take_damage(damage as i32);
                             self.skills.gain_defense_xp(4);
                         } else {
-                            self.game_ui.add_message("Goblin misses!".to_string());
+                            self.game_ui.add_message(format!("{} misses!", target_name.chars().next().unwrap().to_uppercase().collect::<String>() + &target_name[1..]));
                         }
                     }
                 } else {
@@ -718,12 +741,16 @@ impl GameState {
                 actions.push(("Examine".to_string(), ContextMenuAction::Examine(format!("It's a {}.", item.item.name))));
             }
 
-            // Check for nearby goblins
-            if let Some(_goblin) = self.entities.iter()
+            // Check for nearby goblins or cows
+            if let Some(entity) = self.entities.iter()
                 .find(|e| e.is_near(world_x, world_y) && e.is_alive())
             {
                 actions.push(("Attack".to_string(), ContextMenuAction::Attack));
-                actions.push(("Examine".to_string(), ContextMenuAction::Examine("A mean-looking goblin.".to_string())));
+                let examine_text = match &entity.entity_type {
+                    EntityType::Goblin(_) => "A mean-looking goblin.",
+                    EntityType::Cow(_) => "A peaceful cow grazing in the field.",
+                };
+                actions.push(("Examine".to_string(), ContextMenuAction::Examine(examine_text.to_string())));
             }
 
             // Check for nearby fishing spots
@@ -1069,7 +1096,7 @@ impl EventHandler for GameState {
             }
             Some(KeyCode::Space) => {
                 if !self.game_ui.is_menu_visible() {
-                    self.attack_nearest_goblin();
+                    self.attack_nearest_entity();
                 }
             }
             Some(KeyCode::F) => {

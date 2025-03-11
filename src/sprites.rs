@@ -117,6 +117,14 @@ impl SpriteManager {
         );
 
         sprites.insert(
+            "cow".to_string(),
+            Image::from_bytes(
+                ctx,
+                include_bytes!("../assets/sprites/cow.png")
+            )?
+        );
+
+        sprites.insert(
             "fire".to_string(),
             Image::from_bytes(
                 ctx,
@@ -236,6 +244,31 @@ impl SpriteManager {
             Image::from_bytes(
                 ctx,
                 include_bytes!("../assets/sprites/cooked_shrimp.png")
+            )?
+        );
+
+        // Load cow drop sprites
+        sprites.insert(
+            "cow_hide".to_string(),
+            Image::from_bytes(
+                ctx,
+                include_bytes!("../assets/sprites/cowhide.png")
+            )?
+        );
+
+        sprites.insert(
+            "beef".to_string(),
+            Image::from_bytes(
+                ctx,
+                include_bytes!("../assets/sprites/beef.png")
+            )?
+        );
+
+        sprites.insert(
+            "bones".to_string(),
+            Image::from_bytes(
+                ctx,
+                include_bytes!("../assets/sprites/bones.png")
             )?
         );
 
