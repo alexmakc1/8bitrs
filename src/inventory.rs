@@ -14,6 +14,7 @@ pub enum ItemType {
     Food(i32), // healing amount
     Tool(ToolType),
     Resource(ResourceType),
+    Currency(u32), // value in GP
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,9 +57,20 @@ pub enum ResourceType {
 pub struct Item {
     pub name: String,
     pub item_type: ItemType,
+    pub stackable: bool,
+    pub quantity: u32,
 }
 
 impl Item {
+    pub fn gp(amount: u32) -> Self {
+        Item {
+            name: "GP".to_string(),
+            item_type: ItemType::Currency(1),
+            stackable: true,
+            quantity: amount,
+        }
+    }
+
     pub fn bronze_sword() -> Self {
         Item {
             name: "Bronze Sword".to_string(),
@@ -66,6 +78,8 @@ impl Item {
                 attack_bonus: 4,
                 strength_bonus: 3,
             }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -76,6 +90,8 @@ impl Item {
                 defense_bonus: 3,
                 slot: ArmorSlot::Head,
             }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -86,6 +102,8 @@ impl Item {
                 defense_bonus: 5,
                 slot: ArmorSlot::Body,
             }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -96,6 +114,8 @@ impl Item {
                 defense_bonus: 4,
                 slot: ArmorSlot::Legs,
             }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -103,6 +123,8 @@ impl Item {
         Item {
             name: "Shrimp".to_string(),
             item_type: ItemType::Food(3), // Heals 3 HP
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -112,6 +134,8 @@ impl Item {
             item_type: ItemType::Tool(ToolType::Axe {
                 woodcutting_level: 1,
             }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -119,6 +143,8 @@ impl Item {
         Item {
             name: "Tinderbox".to_string(),
             item_type: ItemType::Tool(ToolType::Tinderbox),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -128,6 +154,8 @@ impl Item {
             item_type: ItemType::Resource(ResourceType::Logs {
                 firemaking_level: 1,
             }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -135,6 +163,8 @@ impl Item {
         Item {
             name: "Fishing Rod".to_string(),
             item_type: ItemType::Tool(ToolType::FishingRod { fishing_level: 1 }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -142,6 +172,8 @@ impl Item {
         Item {
             name: "Fishing Bait".to_string(),
             item_type: ItemType::Resource(ResourceType::Bait),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -153,6 +185,8 @@ impl Item {
                 cooking_level: 1,
                 healing: 3 
             }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -164,6 +198,8 @@ impl Item {
                 cooking_level: 15,
                 healing: 7 
             }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -171,6 +207,8 @@ impl Item {
         Item {
             name: "Cooked Shrimp".to_string(),
             item_type: ItemType::Food(3), // Heals 3 HP
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -178,6 +216,8 @@ impl Item {
         Item {
             name: "Cooked Trout".to_string(),
             item_type: ItemType::Food(7), // Heals 7 HP
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -185,6 +225,8 @@ impl Item {
         Item {
             name: "Burnt Fish".to_string(),
             item_type: ItemType::Resource(ResourceType::CookedFish { healing: 0 }),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -192,6 +234,8 @@ impl Item {
         Item {
             name: "Beef".to_string(),
             item_type: ItemType::Food(4), // Heals 4 HP
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -199,6 +243,8 @@ impl Item {
         Item {
             name: "Cow Hide".to_string(),
             item_type: ItemType::Resource(ResourceType::Hide),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -206,6 +252,8 @@ impl Item {
         Item {
             name: "Bones".to_string(),
             item_type: ItemType::Resource(ResourceType::Bones),
+            stackable: false,
+            quantity: 1,
         }
     }
 
@@ -229,6 +277,19 @@ impl Item {
                 true // Item was consumed
             }
             _ => false, // Item wasn't consumed
+        }
+    }
+
+    pub fn is_stackable(&self) -> bool {
+        self.stackable || matches!(self.item_type, ItemType::Currency(_))
+    }
+
+    pub fn stack_with(&mut self, other: &Item) -> bool {
+        if self.name == other.name && self.is_stackable() {
+            self.quantity += other.quantity;
+            true
+        } else {
+            false
         }
     }
 }
@@ -321,6 +382,15 @@ impl Inventory {
     }
 
     pub fn add_item(&mut self, item: Item) -> bool {
+        if item.is_stackable() {
+            for existing_item in self.items.iter_mut().filter_map(|x| x.as_mut()) {
+                if existing_item.name == item.name {
+                    existing_item.quantity += item.quantity;
+                    return true;
+                }
+            }
+        }
+
         if let Some(empty_slot) = self.items.iter_mut().find(|slot| slot.is_none()) {
             *empty_slot = Some(item);
             true
@@ -330,8 +400,40 @@ impl Inventory {
     }
 
     pub fn remove_item(&mut self, index: usize) -> Option<Item> {
-        if index < self.capacity {
-            self.items[index].take()
+        if let Some(Some(item)) = self.items.get_mut(index) {
+            if item.is_stackable() && item.quantity > 1 {
+                item.quantity -= 1;
+                Some(Item {
+                    name: item.name.clone(),
+                    item_type: item.item_type.clone(),
+                    stackable: item.stackable,
+                    quantity: 1,
+                })
+            } else {
+                self.items[index].take()
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn remove_items(&mut self, index: usize, amount: u32) -> Option<Item> {
+        if let Some(Some(item)) = self.items.get_mut(index) {
+            if !item.is_stackable() || amount > item.quantity {
+                return None;
+            }
+            
+            if amount == item.quantity {
+                self.items[index].take()
+            } else {
+                item.quantity -= amount;
+                Some(Item {
+                    name: item.name.clone(),
+                    item_type: item.item_type.clone(),
+                    stackable: item.stackable,
+                    quantity: amount,
+                })
+            }
         } else {
             None
         }

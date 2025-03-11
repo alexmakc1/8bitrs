@@ -23,8 +23,16 @@ pub enum ContextMenuAction {
     PickupItem,
     Attack,
     Fish,
-    Examine(String),
     OpenBank,
+    Examine(String),
+    WithdrawOne,
+    WithdrawTen,
+    WithdrawHundred,
+    WithdrawX,
+    DepositOne,
+    DepositTen,
+    DepositHundred,
+    DepositX,
     None,
 }
 
@@ -129,6 +137,11 @@ pub struct GameUI {
     selected_slot: Option<usize>,
     menu_bar_height: f32,
     max_messages: usize,
+    pub selected_bank_slot: Option<usize>,
+    pub selected_inventory_slot: Option<usize>,
+    pub quantity_dialog_visible: bool,
+    pub quantity_dialog_is_withdraw: bool,
+    pub quantity_input: String,
 }
 
 impl GameUI {
@@ -149,6 +162,11 @@ impl GameUI {
             max_messages: 50,
             message_scroll: 0.0,
             message_window_height: 150.0,
+            selected_bank_slot: None,
+            selected_inventory_slot: None,
+            quantity_dialog_visible: false,
+            quantity_dialog_is_withdraw: true,
+            quantity_input: String::new(),
         }
     }
 
@@ -348,7 +366,7 @@ impl GameUI {
                 if let Some(item) = inventory.get_items().get(i).and_then(|opt| opt.as_ref()) {
                     if self.mouse_x >= x && self.mouse_x <= x + 40.0 && 
                        self.mouse_y >= y && self.mouse_y <= y + 40.0 {
-                        self.tooltip_text = Some(item.name.clone());
+                        self.tooltip_text = Some(format!("{} ({})", item.name, item.quantity));
                     }
 
                     let sprite_name = item.name.to_lowercase().replace(" ", "_");
@@ -360,6 +378,17 @@ impl GameUI {
                                 .dest(Vec2::new(x + 4.0, y + 4.0))
                                 .scale(Vec2::new(2.0, 2.0))
                         );
+
+                        // Draw quantity if more than 1 or if item is stackable
+                        if item.quantity > 1 || item.is_stackable() {
+                            let quantity_text = graphics::Text::new(item.quantity.to_string());
+                            canvas.draw(
+                                &quantity_text,
+                                graphics::DrawParam::new()
+                                    .dest(Vec2::new(x + 25.0, y + 2.0))
+                                    .color(Color::WHITE),
+                            );
+                        }
                     } else {
                         println!("Missing sprite for item: {}", sprite_name);
                         let text = graphics::Text::new(item.name.chars().next().unwrap_or('?').to_string());
@@ -558,10 +587,10 @@ impl GameUI {
                     // Show tooltip on hover
                     if self.mouse_x >= x && self.mouse_x <= x + 40.0 && 
                        self.mouse_y >= y && self.mouse_y <= y + 40.0 {
-                        self.tooltip_text = Some(format!("{} ({})", bank_slot.item.name, bank_slot.quantity));
+                        self.tooltip_text = Some(format!("{} ({})", bank_slot.name, bank_slot.quantity));
                     }
 
-                    let sprite_name = bank_slot.item.name.to_lowercase().replace(" ", "_");
+                    let sprite_name = bank_slot.name.to_lowercase().replace(" ", "_");
                     if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
                         canvas.draw(
                             sprite,
@@ -639,6 +668,64 @@ impl GameUI {
             );
         }
 
+        // Draw quantity dialog if visible
+        if self.quantity_dialog_visible {
+            // Draw dialog background
+            let dialog_width = 200.0;
+            let dialog_height = 100.0;
+            let dialog_x = 512.0 - dialog_width / 2.0; // Center horizontally
+            let dialog_y = 384.0 - dialog_height / 2.0; // Center vertically
+
+            canvas.draw(
+                &graphics::Quad,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(dialog_x, dialog_y))
+                    .scale(Vec2::new(dialog_width, dialog_height))
+                    .color(Color::new(0.0, 0.0, 0.0, 0.9)),
+            );
+
+            // Draw dialog title
+            let title = if self.quantity_dialog_is_withdraw {
+                "Enter amount to withdraw:"
+            } else {
+                "Enter amount to deposit:"
+            };
+            let title_text = graphics::Text::new(title);
+            canvas.draw(
+                &title_text,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(dialog_x + 10.0, dialog_y + 10.0))
+                    .color(Color::WHITE),
+            );
+
+            // Draw input box background
+            canvas.draw(
+                &graphics::Quad,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(dialog_x + 10.0, dialog_y + 40.0))
+                    .scale(Vec2::new(180.0, 30.0))
+                    .color(Color::new(0.2, 0.2, 0.2, 1.0)),
+            );
+
+            // Draw input text
+            let input_text = if self.quantity_input.is_empty() {
+                "Enter amount...".to_string()
+            } else {
+                self.quantity_input.clone()
+            };
+            let text = graphics::Text::new(input_text);
+            canvas.draw(
+                &text,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(dialog_x + 15.0, dialog_y + 45.0))
+                    .color(if self.quantity_input.is_empty() {
+                        Color::new(0.5, 0.5, 0.5, 1.0)
+                    } else {
+                        Color::WHITE
+                    }),
+            );
+        }
+
         Ok(())
     }
 
@@ -668,7 +755,7 @@ impl GameUI {
             return false;
         }
 
-        // Check if click is on close button (20x20 pixel area)
+        // Check if click is on close button
         if x >= 720.0 && x <= 740.0 && y >= 15.0 && y <= 35.0 {
             self.toggle_bank();
             return true;
@@ -696,17 +783,20 @@ impl GameUI {
                             }
                         }
                         MouseButton::Right => {
-                            // Deposit item from inventory to bank
-                            if let Some(selected_slot) = self.selected_slot {
-                                if let Some(item) = inventory.get_item(selected_slot).cloned() {
-                                    if bank.add_item(item.clone()) {
-                                        inventory.remove_item(selected_slot);
-                                        self.add_message(format!("You deposit {}.", item.name));
-                                    } else {
-                                        self.add_message("Your bank is full.".to_string());
-                                    }
+                            // Show context menu for stackable items
+                            if let Some(item) = bank.get_item(slot) {
+                                if item.is_stackable() {
+                                    let mut actions = vec![
+                                        ("Withdraw-1".to_string(), ContextMenuAction::WithdrawOne),
+                                        ("Withdraw-10".to_string(), ContextMenuAction::WithdrawTen),
+                                        ("Withdraw-100".to_string(), ContextMenuAction::WithdrawHundred),
+                                        ("Withdraw-X".to_string(), ContextMenuAction::WithdrawX),
+                                        ("Examine".to_string(), ContextMenuAction::Examine(format!("This is {} GP.", item.quantity))),
+                                    ];
+                                    self.context_menu.show(x, y, actions);
+                                    self.selected_bank_slot = Some(slot);
+                                    return true;
                                 }
-                                self.selected_slot = None;
                             }
                         }
                         _ => {}
@@ -717,4 +807,116 @@ impl GameUI {
         }
         false
     }
-} 
+
+    pub fn handle_inventory_click(&mut self, slot: usize, button: MouseButton, x: f32, y: f32, inventory: &mut Inventory) -> bool {
+        if let Some(item) = inventory.get_item(slot) {
+            match button {
+                MouseButton::Left => {
+                    // ... existing left-click handling ...
+                }
+                MouseButton::Right => {
+                    if self.bank_visible && item.is_stackable() {
+                        let mut actions = vec![
+                            ("Deposit-1".to_string(), ContextMenuAction::DepositOne),
+                            ("Deposit-10".to_string(), ContextMenuAction::DepositTen),
+                            ("Deposit-100".to_string(), ContextMenuAction::DepositHundred),
+                            ("Deposit-X".to_string(), ContextMenuAction::DepositX),
+                            ("Examine".to_string(), ContextMenuAction::Examine(format!("This is {} GP.", item.quantity))),
+                        ];
+                        self.context_menu.show(x, y, actions);
+                        self.selected_inventory_slot = Some(slot);
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    pub fn handle_context_action(&mut self, action: ContextMenuAction, inventory: &mut Inventory, bank: &mut Bank) {
+        match action {
+            ContextMenuAction::WithdrawOne => self.withdraw_items(1, inventory, bank),
+            ContextMenuAction::WithdrawTen => self.withdraw_items(10, inventory, bank),
+            ContextMenuAction::WithdrawHundred => self.withdraw_items(100, inventory, bank),
+            ContextMenuAction::WithdrawX => {
+                // TODO: Show input dialog for amount
+                self.show_quantity_dialog(true);
+            }
+            ContextMenuAction::DepositOne => self.deposit_items(1, inventory, bank),
+            ContextMenuAction::DepositTen => self.deposit_items(10, inventory, bank),
+            ContextMenuAction::DepositHundred => self.deposit_items(100, inventory, bank),
+            ContextMenuAction::DepositX => {
+                // TODO: Show input dialog for amount
+                self.show_quantity_dialog(false);
+            }
+            _ => {}
+        }
+    }
+
+    fn withdraw_items(&mut self, amount: u32, inventory: &mut Inventory, bank: &mut Bank) {
+        if let Some(slot) = self.selected_bank_slot {
+            if let Some(item) = bank.get_item(slot) {
+                let withdraw_amount = amount.min(item.quantity);
+                if let Some(withdrawn_item) = bank.remove_items(slot, withdraw_amount) {
+                    if inventory.add_item(withdrawn_item.clone()) {
+                        self.add_message(format!("You withdraw {} {}.", withdraw_amount, withdrawn_item.name));
+                    } else {
+                        bank.add_item(withdrawn_item); // Put items back in bank
+                        self.add_message("Your inventory is full.".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    fn deposit_items(&mut self, amount: u32, inventory: &mut Inventory, bank: &mut Bank) {
+        if let Some(slot) = self.selected_inventory_slot {
+            if let Some(item) = inventory.get_item(slot) {
+                let deposit_amount = amount.min(item.quantity);
+                if let Some(deposited_item) = inventory.remove_items(slot, deposit_amount) {
+                    if bank.add_item(deposited_item.clone()) {
+                        self.add_message(format!("You deposit {} {}.", deposit_amount, deposited_item.name));
+                    } else {
+                        inventory.add_item(deposited_item); // Put items back in inventory
+                        self.add_message("Your bank is full.".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn show_quantity_dialog(&mut self, is_withdraw: bool) {
+        self.quantity_dialog_visible = true;
+        self.quantity_dialog_is_withdraw = is_withdraw;
+        self.quantity_input.clear();
+    }
+
+    pub fn hide_quantity_dialog(&mut self) {
+        self.quantity_dialog_visible = false;
+        self.quantity_input.clear();
+    }
+
+    pub fn handle_quantity_input(&mut self, c: char) {
+        if c.is_digit(10) && self.quantity_input.len() < 10 {
+            self.quantity_input.push(c);
+        }
+    }
+
+    pub fn handle_quantity_backspace(&mut self) {
+        self.quantity_input.pop();
+    }
+
+    pub fn handle_quantity_enter(&mut self, inventory: &mut Inventory, bank: &mut Bank) {
+        if let Ok(amount) = self.quantity_input.parse::<u32>() {
+            if self.quantity_dialog_is_withdraw {
+                self.withdraw_items(amount, inventory, bank);
+            } else {
+                self.deposit_items(amount, inventory, bank);
+            }
+        }
+        self.hide_quantity_dialog();
+    }
+}
+
+// ... rest of the existing code ... 

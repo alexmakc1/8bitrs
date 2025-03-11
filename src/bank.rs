@@ -2,14 +2,8 @@ use serde::{Serialize, Deserialize};
 use crate::inventory::Item;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BankSlot {
-    pub item: Item,
-    pub quantity: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bank {
-    items: Vec<Option<BankSlot>>,
+    items: Vec<Option<Item>>,
     capacity: usize,
 }
 
@@ -22,52 +16,70 @@ impl Bank {
     }
 
     pub fn add_item(&mut self, item: Item) -> bool {
-        // First try to stack with existing items
-        for slot in self.items.iter_mut() {
-            if let Some(bank_slot) = slot {
-                if bank_slot.item.name == item.name {
-                    bank_slot.quantity += 1;
+        // If the item is stackable, try to stack it with existing items first
+        if item.is_stackable() {
+            for existing_item in self.items.iter_mut().filter_map(|x| x.as_mut()) {
+                if existing_item.name == item.name {
+                    existing_item.quantity += item.quantity;
                     return true;
                 }
             }
         }
 
-        // If no stack found, find empty slot
+        // If we couldn't stack it (or it's not stackable), find an empty slot
         if let Some(empty_slot) = self.items.iter_mut().find(|slot| slot.is_none()) {
-            *empty_slot = Some(BankSlot {
-                item,
-                quantity: 1,
-            });
+            *empty_slot = Some(item);
             true
         } else {
             false
         }
     }
 
-    pub fn get_items(&self) -> &Vec<Option<BankSlot>> {
-        &self.items
-    }
-
-    pub fn get_item(&self, slot: usize) -> Option<&BankSlot> {
-        self.items.get(slot)?.as_ref()
-    }
-
-    pub fn remove_item(&mut self, slot: usize) -> Option<Item> {
-        if let Some(Some(bank_slot)) = self.items.get_mut(slot) {
-            if bank_slot.quantity > 1 {
-                bank_slot.quantity -= 1;
-                Some(bank_slot.item.clone())
+    pub fn remove_item(&mut self, index: usize) -> Option<Item> {
+        if let Some(Some(item)) = self.items.get_mut(index) {
+            if item.is_stackable() && item.quantity > 1 {
+                item.quantity -= 1;
+                Some(Item {
+                    name: item.name.clone(),
+                    item_type: item.item_type.clone(),
+                    stackable: item.stackable,
+                    quantity: 1,
+                })
             } else {
-                // Remove the last item
-                let slot_value = self.items[slot].take();
-                slot_value.map(|s| s.item)
+                self.items[index].take()
             }
         } else {
             None
         }
     }
 
-    pub fn is_full(&self) -> bool {
-        !self.items.iter().any(|slot| slot.is_none())
+    pub fn remove_items(&mut self, index: usize, amount: u32) -> Option<Item> {
+        if let Some(Some(item)) = self.items.get_mut(index) {
+            if !item.is_stackable() || amount > item.quantity {
+                return None;
+            }
+            
+            if amount == item.quantity {
+                self.items[index].take()
+            } else {
+                item.quantity -= amount;
+                Some(Item {
+                    name: item.name.clone(),
+                    item_type: item.item_type.clone(),
+                    stackable: item.stackable,
+                    quantity: amount,
+                })
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn get_item(&self, index: usize) -> Option<&Item> {
+        self.items.get(index).and_then(|opt| opt.as_ref())
+    }
+
+    pub fn get_items(&self) -> &Vec<Option<Item>> {
+        &self.items
     }
 } 

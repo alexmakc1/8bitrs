@@ -299,6 +299,16 @@ def draw_bank_chest(draw):
     # Lock
     draw.rectangle([6, 6, 9, 9], fill=(255, 215, 0))     # Gold color
 
+# GP (Gold coins) sprite
+def draw_gp(draw):
+    # Main coin
+    draw.ellipse([4, 4, 12, 12], fill=(255, 215, 0))  # Gold color
+    # Coin details
+    draw.ellipse([5, 5, 11, 11], fill=(255, 223, 0))  # Lighter gold for depth
+    # Stack effect (additional coins)
+    draw.ellipse([3, 6, 11, 14], fill=(255, 215, 0), outline=(218, 165, 32))
+    draw.ellipse([2, 8, 10, 16], fill=(255, 215, 0), outline=(218, 165, 32))
+
 # List of all sprites to create
 sprites = [
     ('player', 16, draw_player),
@@ -334,6 +344,7 @@ sprites = [
     ('cooked_trout', 16, draw_cooked_trout),
     ('burnt_fish', 16, draw_burnt_fish),
     ('bank_chest', 16, draw_bank_chest),  # Add bank chest sprite
+    ('gp', 16, draw_gp),  # Add GP sprite creation
 ]
 
 # Create all sprites
@@ -374,3 +385,4 @@ if __name__ == "__main__":
     create_sprite('raw_shrimp', 16, draw_raw_shrimp)
     create_sprite('cooked_shrimp', 16, draw_cooked_shrimp)
     create_sprite('bank_chest', 16, draw_bank_chest)  # Add bank chest sprite
+    create_sprite('gp', 16, draw_gp)  # Add GP sprite creation

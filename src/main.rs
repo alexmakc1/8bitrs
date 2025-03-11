@@ -154,6 +154,7 @@ impl GameState {
             state.inventory.add_item(Item::bronze_axe());
             state.inventory.add_item(Item::tinderbox());
             state.inventory.add_item(Item::fishing_rod());
+            state.inventory.add_item(Item::gp(1000));
         }
 
         state.spawn_world_objects();
@@ -793,39 +794,23 @@ impl GameState {
     fn handle_context_action(&mut self, action: ContextMenuAction, x: f32, y: f32) {
         match action {
             ContextMenuAction::ChopTree => {
-                println!("ChopTree action initiated at coordinates: ({}, {})", x, y);
-                if let Some((index, obj)) = self.world_objects.iter().enumerate()
-                    .find(|(_, obj)| {
-                        let dx = obj.x - x;
-                        let dy = obj.y - y;
-                        (dx * dx + dy * dy).sqrt() < 40.0 && matches!(obj.object_type, ObjectType::Tree)
-                    })
-                {
-                    println!("Found tree at index {} with coordinates: ({}, {})", index, obj.x, obj.y);
-                    // Check if player has an axe
-                    let has_axe = self.inventory.get_items().iter()
-                        .filter_map(|item| item.as_ref())
-                        .any(|item| matches!(&item.item_type, ItemType::Tool(ToolType::Axe { .. })));
-
-                    if has_axe {
-                        println!("Player has an axe, setting destination to tree");
-                        self.set_destination(obj.x, obj.y, PendingAction::ChopTree(index));
-                    } else {
-                        println!("Player needs an axe to chop trees");
-                    }
-                } else {
-                    println!("No tree found near coordinates: ({}, {})", x, y);
+                if let Some((tree_index, _)) = self.trees.iter().enumerate()
+                    .find(|(_, tree)| {
+                        let dx = tree.x - x;
+                        let dy = tree.y - y;
+                        dx * dx + dy * dy < 100.0
+                    }) {
+                    self.set_destination(x, y, PendingAction::ChopTree(tree_index));
                 }
             }
             ContextMenuAction::PickupItem => {
-                if let Some((index, _)) = self.dropped_items.iter().enumerate()
-                    .find(|(_, i)| {
-                        let dx = i.x - x;
-                        let dy = i.y - y;
-                        (dx * dx + dy * dy).sqrt() < 40.0
-                    })
-                {
-                    self.set_destination(x, y, PendingAction::PickupItem(index));
+                if let Some((item_index, _)) = self.dropped_items.iter().enumerate()
+                    .find(|(_, item)| {
+                        let dx = item.x - x;
+                        let dy = item.y - y;
+                        dx * dx + dy * dy < 100.0
+                    }) {
+                    self.set_destination(x, y, PendingAction::PickupItem(item_index));
                 }
             }
             ContextMenuAction::Attack => {
@@ -834,22 +819,21 @@ impl GameState {
             ContextMenuAction::Fish => {
                 self.set_destination(x, y, PendingAction::Fish(x, y));
             }
-            ContextMenuAction::Examine(text) => {
-                println!("{}", text);
-            }
             ContextMenuAction::OpenBank => {
-                // Check if player is near a bank chest
-                if let Some(_) = self.world_objects.iter()
-                    .find(|obj| matches!(obj.object_type, ObjectType::BankChest) && {
-                        let dx = obj.x - self.player_x;
-                        let dy = obj.y - self.player_y;
-                        (dx * dx + dy * dy).sqrt() < 40.0
-                    })
-                {
-                    self.game_ui.toggle_bank();
-                } else {
-                    self.game_ui.add_message("You need to be closer to a bank chest.".to_string());
-                }
+                self.game_ui.toggle_bank();
+            }
+            ContextMenuAction::Examine(text) => {
+                self.game_ui.add_message(text);
+            }
+            ContextMenuAction::WithdrawOne |
+            ContextMenuAction::WithdrawTen |
+            ContextMenuAction::WithdrawHundred |
+            ContextMenuAction::WithdrawX |
+            ContextMenuAction::DepositOne |
+            ContextMenuAction::DepositTen |
+            ContextMenuAction::DepositHundred |
+            ContextMenuAction::DepositX => {
+                self.game_ui.handle_context_action(action, &mut self.inventory, &mut self.bank);
             }
             ContextMenuAction::None => {}
         }
@@ -1162,21 +1146,44 @@ impl EventHandler for GameState {
 
     fn key_down_event(&mut self, _ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
         match input.keycode {
-            Some(KeyCode::I) => {
-                self.game_ui.toggle_inventory();
-            }
-            Some(KeyCode::K) => {
-                self.game_ui.toggle_skills_menu();
-            }
-            Some(KeyCode::E) => {
-                self.game_ui.toggle_equipment_screen();
-            }
+            Some(KeyCode::I) => self.game_ui.toggle_inventory(),
+            Some(KeyCode::K) => self.game_ui.toggle_skills_menu(),
+            Some(KeyCode::E) => self.game_ui.toggle_equipment_screen(),
             Some(KeyCode::Escape) => {
-                if self.game_ui.bank_visible {
+                if self.game_ui.quantity_dialog_visible {
+                    self.game_ui.hide_quantity_dialog();
+                } else if self.game_ui.bank_visible {
                     self.game_ui.toggle_bank();
                 }
             }
-            _ => {}
+            Some(KeyCode::Return) | Some(KeyCode::NumpadEnter) => {
+                if self.game_ui.quantity_dialog_visible {
+                    self.game_ui.handle_quantity_enter(&mut self.inventory, &mut self.bank);
+                }
+            }
+            Some(KeyCode::Back) => {
+                if self.game_ui.quantity_dialog_visible {
+                    self.game_ui.handle_quantity_backspace();
+                }
+            }
+            Some(key) => {
+                if self.game_ui.quantity_dialog_visible {
+                    match key {
+                        KeyCode::Key0 | KeyCode::Numpad0 => self.game_ui.handle_quantity_input('0'),
+                        KeyCode::Key1 | KeyCode::Numpad1 => self.game_ui.handle_quantity_input('1'),
+                        KeyCode::Key2 | KeyCode::Numpad2 => self.game_ui.handle_quantity_input('2'),
+                        KeyCode::Key3 | KeyCode::Numpad3 => self.game_ui.handle_quantity_input('3'),
+                        KeyCode::Key4 | KeyCode::Numpad4 => self.game_ui.handle_quantity_input('4'),
+                        KeyCode::Key5 | KeyCode::Numpad5 => self.game_ui.handle_quantity_input('5'),
+                        KeyCode::Key6 | KeyCode::Numpad6 => self.game_ui.handle_quantity_input('6'),
+                        KeyCode::Key7 | KeyCode::Numpad7 => self.game_ui.handle_quantity_input('7'),
+                        KeyCode::Key8 | KeyCode::Numpad8 => self.game_ui.handle_quantity_input('8'),
+                        KeyCode::Key9 | KeyCode::Numpad9 => self.game_ui.handle_quantity_input('9'),
+                        _ => {}
+                    }
+                }
+            }
+            None => {}
         }
         Ok(())
     }
