@@ -110,31 +110,33 @@ impl ContextMenu {
 }
 
 pub struct GameUI {
-    pub inventory_visible: bool,
     pub context_menu: ContextMenu,
-    selected_slot: Option<usize>,
-    tooltip_text: Option<String>,
+    pub inventory_visible: bool,
+    pub skills_menu_visible: bool,
+    pub equipment_screen_visible: bool,
     mouse_x: f32,
     mouse_y: f32,
-    skills_menu_visible: bool,
-    sprite_manager: &'static SpriteManager,
-    menu_bar_height: f32,
+    tooltip_text: Option<String>,
     messages: Vec<String>,
-    max_messages: usize,
     message_scroll: f32,
     message_window_height: f32,
+    sprite_manager: &'static SpriteManager,
+    selected_slot: Option<usize>,
+    menu_bar_height: f32,
+    max_messages: usize,
 }
 
 impl GameUI {
     pub fn new(sprite_manager: &'static SpriteManager) -> Self {
         Self {
-            inventory_visible: true,
+            inventory_visible: false,
             context_menu: ContextMenu::new(),
             selected_slot: None,
             tooltip_text: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
             skills_menu_visible: false,
+            equipment_screen_visible: false,
             sprite_manager,
             menu_bar_height: 40.0,
             messages: Vec::new(),
@@ -188,6 +190,7 @@ impl GameUI {
         self.skills_menu_visible = !self.skills_menu_visible;
         if self.skills_menu_visible {
             self.inventory_visible = false;
+            self.equipment_screen_visible = false;
         }
     }
 
@@ -195,11 +198,20 @@ impl GameUI {
         self.inventory_visible = !self.inventory_visible;
         if self.inventory_visible {
             self.skills_menu_visible = false;
+            self.equipment_screen_visible = false;
+        }
+    }
+
+    pub fn toggle_equipment_screen(&mut self) {
+        self.equipment_screen_visible = !self.equipment_screen_visible;
+        if self.equipment_screen_visible {
+            self.inventory_visible = false;
+            self.skills_menu_visible = false;
         }
     }
 
     pub fn is_menu_visible(&self) -> bool {
-        self.inventory_visible || self.skills_menu_visible || self.context_menu.visible
+        self.inventory_visible || self.skills_menu_visible || self.equipment_screen_visible || self.context_menu.visible
     }
 
     pub fn get_selected_slot(&self) -> Option<usize> {
@@ -270,7 +282,7 @@ impl GameUI {
                 .color(Color::WHITE),
         );
 
-        if self.inventory_visible || self.skills_menu_visible {
+        if self.inventory_visible || self.skills_menu_visible || self.equipment_screen_visible {
             canvas.draw(
                 &graphics::Quad,
                 graphics::DrawParam::new()
@@ -281,74 +293,11 @@ impl GameUI {
         }
 
         if self.inventory_visible {
-            let equip_text = graphics::Text::new("Equipment:".to_string());
-            canvas.draw(
-                &equip_text,
-                graphics::DrawParam::new()
-                    .dest(Vec2::new(30.0, 125.0))
-                    .color(Color::WHITE),
-            );
-
-            let equipped_items = [
-                ("Weapon", equipment.get_weapon()),
-                ("Head", equipment.get_armor(&ArmorSlot::Head)),
-                ("Body", equipment.get_armor(&ArmorSlot::Body)),
-                ("Legs", equipment.get_armor(&ArmorSlot::Legs)),
-            ];
-
-            for (i, (slot_name, item)) in equipped_items.iter().enumerate() {
-                let x = 30.0 + i as f32 * 45.0;
-                let y = 145.0;
-
-                canvas.draw(
-                    &graphics::Quad,
-                    graphics::DrawParam::new()
-                        .dest(Vec2::new(x, y))
-                        .scale(Vec2::new(40.0, 40.0))
-                        .color(Color::new(0.4, 0.4, 0.4, 0.8)),
-                );
-
-                let label = graphics::Text::new(slot_name.chars().next().unwrap_or('?').to_string());
-                canvas.draw(
-                    &label,
-                    graphics::DrawParam::new()
-                        .dest(Vec2::new(x + 2.0, y + 2.0))
-                        .color(Color::new(0.7, 0.7, 0.7, 0.5)),
-                );
-
-                if let Some(item) = item {
-                    if self.mouse_x >= x && self.mouse_x <= x + 40.0 && 
-                       self.mouse_y >= y && self.mouse_y <= y + 40.0 {
-                        self.tooltip_text = Some(format!("Equipped: {}", item.name));
-                    }
-
-                    let sprite_name = item.name.to_lowercase().replace(" ", "_");
-                    
-                    if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
-                        canvas.draw(
-                            sprite,
-                            graphics::DrawParam::new()
-                                .dest(Vec2::new(x + 4.0, y + 4.0))
-                                .scale(Vec2::new(2.0, 2.0))
-                        );
-                    } else {
-                        println!("Missing sprite for item: {}", sprite_name);
-                        let text = graphics::Text::new(item.name.chars().next().unwrap_or('?').to_string());
-                        canvas.draw(
-                            &text,
-                            graphics::DrawParam::new()
-                                .dest(Vec2::new(x + 15.0, y + 15.0))
-                                .color(Color::WHITE),
-                        );
-                    }
-                }
-            }
-
             let inv_text = graphics::Text::new("Inventory:".to_string());
             canvas.draw(
                 &inv_text,
                 graphics::DrawParam::new()
-                    .dest(Vec2::new(30.0, 195.0))
+                    .dest(Vec2::new(30.0, 30.0))
                     .color(Color::WHITE),
             );
 
@@ -356,7 +305,7 @@ impl GameUI {
                 let row = i / 4;
                 let col = i % 4;
                 let x = 30.0 + col as f32 * 45.0;
-                let y = 215.0 + row as f32 * 45.0;
+                let y = 50.0 + row as f32 * 45.0;
 
                 let slot_color = if Some(i) == self.selected_slot {
                     Color::new(0.5, 0.5, 0.5, 0.8)
@@ -433,6 +382,94 @@ impl GameUI {
             }
         }
 
+        if self.equipment_screen_visible {
+            // Draw equipment screen background
+            canvas.draw(
+                &graphics::Quad,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(10.0, 10.0))
+                    .scale(Vec2::new(220.0, 340.0))
+                    .color(Color::new(0.0, 0.0, 0.0, 0.8)),
+            );
+
+            // Draw title
+            let title = graphics::Text::new("Equipment");
+            canvas.draw(
+                &title,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(30.0, 20.0))
+                    .color(Color::WHITE),
+            );
+
+            // Draw equipment slots
+            let equipped_items = [
+                ("Weapon", equipment.get_weapon()),
+                ("Head", equipment.get_armor(&ArmorSlot::Head)),
+                ("Body", equipment.get_armor(&ArmorSlot::Body)),
+                ("Legs", equipment.get_armor(&ArmorSlot::Legs)),
+            ];
+
+            for (i, (slot_name, item)) in equipped_items.iter().enumerate() {
+                let y = 60.0 + i as f32 * 45.0;
+                
+                // Draw slot background
+                canvas.draw(
+                    &graphics::Quad,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(30.0, y))
+                        .scale(Vec2::new(40.0, 40.0))
+                        .color(Color::new(0.4, 0.4, 0.4, 0.8)),
+                );
+
+                // Draw slot name
+                let slot_text = graphics::Text::new(slot_name.to_string());
+                canvas.draw(
+                    &slot_text,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(80.0, y + 10.0))
+                        .color(Color::WHITE),
+                );
+
+                // Draw item if equipped
+                if let Some(item) = item {
+                    let sprite_name = item.name.to_lowercase().replace(" ", "_");
+                    if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
+                        canvas.draw(
+                            sprite,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(34.0, y + 4.0))
+                                .scale(Vec2::new(2.0, 2.0))
+                        );
+                    }
+
+                    // Show tooltip on hover
+                    if self.mouse_x >= 30.0 && self.mouse_x <= 70.0 && 
+                       self.mouse_y >= y && self.mouse_y <= y + 40.0 {
+                        self.tooltip_text = Some(format!("{} (Click to unequip)", item.name));
+                    }
+                }
+            }
+
+            // Draw combat bonuses
+            let y = 240.0;
+            let bonuses = [
+                ("Attack Bonus:", equipment.get_total_attack_bonus()),
+                ("Strength Bonus:", equipment.get_total_strength_bonus()),
+                ("Defense Bonus:", equipment.get_total_defense_bonus()),
+            ];
+
+            for (i, (label, value)) in bonuses.iter().enumerate() {
+                let bonus_text = graphics::Text::new(format!("{} {}", label, value));
+                canvas.draw(
+                    &bonus_text,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(30.0, y + i as f32 * 25.0))
+                        .color(Color::WHITE),
+                );
+            }
+        }
+
+        // Draw menu bar
         canvas.draw(
             &graphics::Quad,
             graphics::DrawParam::new()
@@ -441,59 +478,47 @@ impl GameUI {
                 .color(Color::new(0.0, 0.0, 0.0, 0.8)),
         );
 
-        let button_width = 100.0;
-        let button_height = 30.0;
-        let button_spacing = 10.0;
-        let start_x = 10.0;
+        // Draw menu buttons
+        let buttons = [
+            ("Inventory (I)", self.inventory_visible),
+            ("Skills (K)", self.skills_menu_visible),
+            ("Equipment (E)", self.equipment_screen_visible),
+        ];
 
-        let inventory_button_color = if self.inventory_visible {
-            Color::new(0.5, 0.5, 0.5, 1.0)
-        } else {
-            Color::new(0.3, 0.3, 0.3, 1.0)
-        };
-        canvas.draw(
-            &graphics::Quad,
-            graphics::DrawParam::new()
-                .dest(Vec2::new(start_x, menu_y + 5.0))
-                .scale(Vec2::new(button_width, button_height))
-                .color(inventory_button_color),
-        );
-        let inventory_text = graphics::Text::new("Inventory");
-        canvas.draw(
-            &inventory_text,
-            graphics::DrawParam::new()
-                .dest(Vec2::new(start_x + 10.0, menu_y + 10.0))
-                .color(Color::WHITE),
-        );
+        for (i, (text, active)) in buttons.iter().enumerate() {
+            let x = 10.0 + i as f32 * 120.0;
+            let button_text = graphics::Text::new(text.to_string());
+            
+            // Draw button background
+            canvas.draw(
+                &graphics::Quad,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(x, menu_y + 5.0))
+                    .scale(Vec2::new(110.0, 30.0))
+                    .color(if *active {
+                        Color::new(0.4, 0.4, 0.4, 0.8)
+                    } else {
+                        Color::new(0.2, 0.2, 0.2, 0.8)
+                    }),
+            );
 
-        let stats_button_color = if self.skills_menu_visible {
-            Color::new(0.5, 0.5, 0.5, 1.0)
-        } else {
-            Color::new(0.3, 0.3, 0.3, 1.0)
-        };
-        canvas.draw(
-            &graphics::Quad,
-            graphics::DrawParam::new()
-                .dest(Vec2::new(start_x + button_width + button_spacing, menu_y + 5.0))
-                .scale(Vec2::new(button_width, button_height))
-                .color(stats_button_color),
-        );
-        let stats_text = graphics::Text::new("Stats");
-        canvas.draw(
-            &stats_text,
-            graphics::DrawParam::new()
-                .dest(Vec2::new(start_x + button_width + button_spacing + 10.0, menu_y + 10.0))
-                .color(Color::WHITE),
-        );
+            // Draw button text
+            canvas.draw(
+                &button_text,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(x + 5.0, menu_y + 10.0))
+                    .color(Color::WHITE),
+            );
+        }
 
         self.context_menu.draw(canvas)?;
 
         if let Some(text) = &self.tooltip_text {
-            let tooltip_text = graphics::Text::new(text.clone());
+            let tooltip = graphics::Text::new(text.clone());
             canvas.draw(
-                &tooltip_text,
+                &tooltip,
                 graphics::DrawParam::new()
-                    .dest(Vec2::new(self.mouse_x + 10.0, self.mouse_y + 10.0))
+                    .dest(Vec2::new(self.mouse_x + 15.0, self.mouse_y - 15.0))
                     .color(Color::WHITE),
             );
         }
@@ -502,34 +527,20 @@ impl GameUI {
     }
 
     pub fn handle_menu_click(&mut self, x: f32, y: f32) -> bool {
-        let screen_height = 768.0; // Window height
-        let menu_y = screen_height - self.menu_bar_height;
-        let message_y = menu_y - self.message_window_height;
-
-        if y >= message_y && y < menu_y {
-            if y > menu_y - 20.0 {
-                let scroll_percent = (x / 1024.0).clamp(0.0, 1.0);
-                self.message_scroll = scroll_percent * (self.message_window_height - 20.0);
-            }
-            return true;
-        }
-
-        if y >= menu_y && y <= screen_height {
-            let button_width = 100.0;
-            let button_height = 30.0;
-            let button_spacing = 10.0;
-            let start_x = 10.0;
-
-            if x >= start_x && x <= start_x + button_width && 
-               y >= menu_y + 5.0 && y <= menu_y + 5.0 + button_height {
-                self.toggle_inventory();
-                return true;
-            }
-
-            if x >= start_x + button_width + button_spacing && 
-               x <= start_x + button_width + button_spacing + button_width && 
-               y >= menu_y + 5.0 && y <= menu_y + 5.0 + button_height {
-                self.toggle_skills_menu();
+        let menu_y = 768.0 - 40.0;
+        if y >= menu_y && y <= menu_y + 40.0 {
+            let button_width = 110.0;
+            let button_spacing = 120.0;
+            
+            // Check which button was clicked
+            let button_index = ((x - 10.0) / button_spacing) as i32;
+            if x >= 10.0 && button_index >= 0 && button_index < 3 {
+                match button_index {
+                    0 => self.toggle_inventory(),
+                    1 => self.toggle_skills_menu(),
+                    2 => self.toggle_equipment_screen(),
+                    _ => return false,
+                }
                 return true;
             }
         }

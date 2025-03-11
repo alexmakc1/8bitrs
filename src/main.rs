@@ -967,51 +967,75 @@ impl EventHandler for GameState {
             return Ok(());
         }
 
-        if self.game_ui.inventory_visible {
-            // Check if click is in inventory area (shifted down by output window height)
-            if x >= 10.0 && x <= 230.0 && y >= 120.0 && y <= 460.0 {
-                // Check if click is in equipment area
-                if y >= 125.0 && y <= 165.0 && x >= 30.0 && x <= 210.0 {
-                    let slot_x = ((x - 30.0) / 45.0).floor() as usize;
-                    if slot_x < 4 {
-                        // Handle equipment slot click
-                        let slot = match slot_x {
-                            0 => None,  // Weapon slot
-                            1 => Some(ArmorSlot::Head),  // Head slot
-                            2 => Some(ArmorSlot::Body),  // Body slot
-                            3 => Some(ArmorSlot::Legs),  // Legs slot
-                            _ => None,
-                        };
-                        
-                        if let Some(slot) = slot {
-                            if let Some(item) = self.equipment.unequip_armor(slot) {
-                                if self.inventory.add_item(item.clone()) {
-                                    self.game_ui.add_message(format!("Unequipped {}", item.name));
-                                } else {
-                                    self.game_ui.add_message("Your inventory is full.".to_string());
+        if self.game_ui.equipment_screen_visible {
+            // Check if click is in equipment area
+            if x >= 10.0 && x <= 230.0 && y >= 10.0 && y <= 350.0 {
+                // Calculate which equipment slot was clicked
+                if x >= 30.0 && x <= 70.0 { // Equipment slot width
+                    let slot_index = ((y - 60.0) / 45.0).floor() as usize;
+                    if slot_index < 4 { // 4 equipment slots
+                        match slot_index {
+                            0 => { // Weapon slot
+                                if let Some(item) = self.equipment.unequip_weapon() {
+                                    if self.inventory.add_item(item.clone()) {
+                                        self.game_ui.add_message(format!("Unequipped {}", item.name));
+                                    } else {
+                                        self.game_ui.add_message("Your inventory is full.".to_string());
+                                        // Put the item back
+                                        self.equipment.equip_weapon(item);
+                                    }
                                 }
                             }
-                        } else if slot_x == 0 {
-                            // Handle weapon slot
-                            if let Some(item) = self.equipment.unequip_weapon() {
-                                if self.inventory.add_item(item.clone()) {
-                                    self.game_ui.add_message(format!("Unequipped {}", item.name));
-                                } else {
-                                    self.game_ui.add_message("Your inventory is full.".to_string());
+                            1 => { // Head slot
+                                if let Some(item) = self.equipment.unequip_armor(ArmorSlot::Head) {
+                                    if self.inventory.add_item(item.clone()) {
+                                        self.game_ui.add_message(format!("Unequipped {}", item.name));
+                                    } else {
+                                        self.game_ui.add_message("Your inventory is full.".to_string());
+                                        // Put the item back
+                                        self.equipment.equip_armor(item);
+                                    }
                                 }
                             }
+                            2 => { // Body slot
+                                if let Some(item) = self.equipment.unequip_armor(ArmorSlot::Body) {
+                                    if self.inventory.add_item(item.clone()) {
+                                        self.game_ui.add_message(format!("Unequipped {}", item.name));
+                                    } else {
+                                        self.game_ui.add_message("Your inventory is full.".to_string());
+                                        // Put the item back
+                                        self.equipment.equip_armor(item);
+                                    }
+                                }
+                            }
+                            3 => { // Legs slot
+                                if let Some(item) = self.equipment.unequip_armor(ArmorSlot::Legs) {
+                                    if self.inventory.add_item(item.clone()) {
+                                        self.game_ui.add_message(format!("Unequipped {}", item.name));
+                                    } else {
+                                        self.game_ui.add_message("Your inventory is full.".to_string());
+                                        // Put the item back
+                                        self.equipment.equip_armor(item);
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
-                // Check if click is in inventory area
-                else if x >= 30.0 && x <= 210.0 && y >= 215.0 && y <= 455.0 {
-                    let slot_x = ((x - 30.0) / 45.0).floor() as usize;
-                    let slot_y = ((y - 215.0) / 45.0).floor() as usize;
-                    let slot = slot_y * 4 + slot_x;
-                    
-                    if slot < self.inventory.get_items().len() {
-                        self.handle_inventory_click(slot, button);
-                    }
+            }
+            return Ok(());
+        }
+
+        if self.game_ui.inventory_visible {
+            // Check if click is in inventory area
+            if x >= 30.0 && x <= 210.0 && y >= 50.0 && y <= 290.0 {
+                let slot_x = ((x - 30.0) / 45.0).floor() as usize;
+                let slot_y = ((y - 50.0) / 45.0).floor() as usize;
+                let slot = slot_y * 4 + slot_x;
+                
+                if slot < self.inventory.get_items().len() {
+                    self.handle_inventory_click(slot, button);
                 }
             } else {
                 // Click outside inventory - handle world interaction
@@ -1034,8 +1058,14 @@ impl EventHandler for GameState {
 
     fn key_down_event(&mut self, ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
         match input.keycode {
-            Some(KeyCode::Tab) => {
+            Some(KeyCode::I) => {
+                self.game_ui.toggle_inventory();
+            }
+            Some(KeyCode::K) => {
                 self.game_ui.toggle_skills_menu();
+            }
+            Some(KeyCode::E) => {
+                self.game_ui.toggle_equipment_screen();
             }
             Some(KeyCode::Space) => {
                 if !self.game_ui.is_menu_visible() {
