@@ -16,6 +16,7 @@ pub enum ObjectType {
     CastleStairs,
     Bridge,
     Path,
+    BankChest,
 }
 
 #[derive(Debug)]
@@ -41,6 +42,7 @@ impl WorldObject {
             ObjectType::CastleStairs => (40.0, 40.0, false, 255),
             ObjectType::Bridge => (40.0, 40.0, false, 255),
             ObjectType::Path => (40.0, 40.0, false, 255),
+            ObjectType::BankChest => (40.0, 40.0, false, 255),
         };
 
         Self {
@@ -55,18 +57,7 @@ impl WorldObject {
     }
 
     pub fn draw(&self, canvas: &mut Canvas, offset_x: f32, offset_y: f32, sprites: &SpriteManager) -> GameResult {
-        let sprite_name = match self.object_type {
-            ObjectType::Wall => "wall",
-            ObjectType::Tree => "tree",
-            ObjectType::Water => "water",
-            ObjectType::Road => "road",
-            ObjectType::Fence => "fence",
-            ObjectType::CastleWall => "castle_wall",
-            ObjectType::CastleDoor => "castle_door",
-            ObjectType::CastleStairs => "castle_stairs",
-            ObjectType::Bridge => "bridge",
-            ObjectType::Path => "path",
-        };
+        let sprite_name = self.object_type.get_sprite_name();
 
         if let Some(sprite) = sprites.get_sprite(sprite_name) {
             canvas.draw(
@@ -119,5 +110,23 @@ impl WorldObject {
             }
         }
         false
+    }
+}
+
+impl ObjectType {
+    pub fn get_sprite_name(&self) -> &str {
+        match self {
+            ObjectType::Wall => "wall",
+            ObjectType::Tree => "tree",
+            ObjectType::Water => "water",
+            ObjectType::Road => "road",
+            ObjectType::Fence => "fence",
+            ObjectType::CastleWall => "castle_wall",
+            ObjectType::CastleDoor => "castle_door",
+            ObjectType::CastleStairs => "castle_stairs",
+            ObjectType::Bridge => "bridge",
+            ObjectType::Path => "path",
+            ObjectType::BankChest => "bank_chest",
+        }
     }
 } 

@@ -287,6 +287,18 @@ def draw_bronze_sword(draw):
     # Guard
     draw.rectangle([6, 11, 12, 12], fill=(205, 127, 50))
 
+# Bank chest sprite
+def draw_bank_chest(draw):
+    # Main chest body
+    draw.rectangle([2, 4, 13, 13], fill=(139, 69, 19))  # Dark wood color
+    # Chest lid
+    draw.rectangle([2, 2, 13, 4], fill=(160, 82, 45))   # Lighter wood color
+    # Metal bands
+    draw.rectangle([2, 6, 13, 7], fill=(192, 192, 192))  # Silver color
+    draw.rectangle([2, 10, 13, 11], fill=(192, 192, 192))
+    # Lock
+    draw.rectangle([6, 6, 9, 9], fill=(255, 215, 0))     # Gold color
+
 # List of all sprites to create
 sprites = [
     ('player', 16, draw_player),
@@ -321,8 +333,44 @@ sprites = [
     ('raw_trout', 16, draw_raw_trout),
     ('cooked_trout', 16, draw_cooked_trout),
     ('burnt_fish', 16, draw_burnt_fish),
+    ('bank_chest', 16, draw_bank_chest),  # Add bank chest sprite
 ]
 
 # Create all sprites
 for name, size, draw_func in sprites:
     create_sprite(name, size, draw_func)
+
+if __name__ == "__main__":
+    # Create sprites directory if it doesn't exist
+    import os
+    os.makedirs('assets/sprites', exist_ok=True)
+
+    # Create all sprites
+    create_sprite('player', 16, draw_player)
+    create_sprite('tree', 16, draw_tree)
+    create_sprite('tree_stump', 16, draw_tree_stump)
+    create_sprite('wall', 16, draw_wall)
+    create_sprite('goblin', 16, draw_goblin)
+    create_sprite('fire', 16, draw_fire)
+    create_sprite('fishing_spot', 16, draw_fishing_spot)
+    create_sprite('sword', 16, draw_sword)
+    create_sprite('axe', 16, draw_axe)
+    create_sprite('logs', 16, draw_logs)
+    create_sprite('fish', 16, draw_fish)
+    create_sprite('water', 16, draw_water)
+    create_sprite('road', 16, draw_road)
+    create_sprite('fence', 16, draw_fence)
+    create_sprite('castle_wall', 16, draw_castle_wall)
+    create_sprite('castle_door', 16, draw_castle_door)
+    create_sprite('castle_stairs', 16, draw_castle_stairs)
+    create_sprite('bridge', 16, draw_bridge)
+    create_sprite('path', 16, draw_path)
+    create_sprite('bronze_helmet', 16, draw_bronze_helmet)
+    create_sprite('bronze_platebody', 16, draw_bronze_platebody)
+    create_sprite('bronze_platelegs', 16, draw_bronze_platelegs)
+    create_sprite('fishing_rod', 16, draw_fishing_rod)
+    create_sprite('bait', 16, draw_bait)
+    create_sprite('tinderbox', 16, draw_tinderbox)
+    create_sprite('raw_shrimp', 16, draw_raw_shrimp)
+    create_sprite('cooked_shrimp', 16, draw_cooked_shrimp)
+    create_sprite('bank_chest', 16, draw_bank_chest)  # Add bank chest sprite

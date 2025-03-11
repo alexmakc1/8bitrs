@@ -18,6 +18,7 @@ mod world;
 mod save;
 mod sprites;
 mod world_objects;
+mod bank;
 
 use skills::Skills;
 use ui::{GameUI, ContextMenuAction};
@@ -29,6 +30,7 @@ use world::{Tree, Fire, FishingSpot, FishType};
 use save::{SaveData, create_save_data};
 use sprites::SpriteManager;
 use world_objects::{WorldObject, ObjectType};
+use bank::Bank;
 use crate::entity::EntityType;
 
 #[derive(Clone, Debug)]
@@ -74,6 +76,7 @@ pub struct GameState {
     action_timer: f32,
     sprite_manager: &'static SpriteManager,
     world_objects: Vec<WorldObject>,
+    pub bank: Bank,
 }
 
 impl GameState {
@@ -108,6 +111,7 @@ impl GameState {
                 action_timer: 0.0,
                 sprite_manager: &*sprite_manager,
                 world_objects: Vec::new(),
+                bank: Bank::new(800),
             }
         } else {
             // Create new game state
@@ -137,6 +141,7 @@ impl GameState {
                 action_timer: 0.0,
                 sprite_manager: &*sprite_manager,
                 world_objects: Vec::new(),
+                bank: Bank::new(800),
             }
         };
 
@@ -157,6 +162,10 @@ impl GameState {
 
     fn spawn_world_objects(&mut self) {
         let mut rng = rand::thread_rng();
+        
+        // Spawn bank chests in useful locations
+        self.world_objects.push(WorldObject::new(100.0, 100.0, ObjectType::BankChest)); // Near starting area
+        self.world_objects.push(WorldObject::new(500.0, 500.0, ObjectType::BankChest)); // Near forest
         
         // Spawn forest areas
         let forest_regions = [
@@ -724,6 +733,10 @@ impl GameState {
                         ObjectType::Fence => {
                             actions.push(("Examine".to_string(), ContextMenuAction::Examine("A wooden fence.".to_string())));
                         }
+                        ObjectType::BankChest => {
+                            actions.push(("Use Bank".to_string(), ContextMenuAction::OpenBank));
+                            actions.push(("Examine".to_string(), ContextMenuAction::Examine("A secure chest for storing your items.".to_string())));
+                        }
                     }
                     break; // Only show options for the first object found
                 }
@@ -824,6 +837,20 @@ impl GameState {
             ContextMenuAction::Examine(text) => {
                 println!("{}", text);
             }
+            ContextMenuAction::OpenBank => {
+                // Check if player is near a bank chest
+                if let Some(_) = self.world_objects.iter()
+                    .find(|obj| matches!(obj.object_type, ObjectType::BankChest) && {
+                        let dx = obj.x - self.player_x;
+                        let dy = obj.y - self.player_y;
+                        (dx * dx + dy * dy).sqrt() < 40.0
+                    })
+                {
+                    self.game_ui.toggle_bank();
+                } else {
+                    self.game_ui.add_message("You need to be closer to a bank chest.".to_string());
+                }
+            }
             ContextMenuAction::None => {}
         }
     }
@@ -843,6 +870,85 @@ impl GameState {
         };
         
         self.fishing_spots.push(FishingSpot::new(x, y, fish_type));
+    }
+
+    fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from([0.1, 0.2, 0.3, 1.0]));
+
+        // Draw world objects with camera offset
+        for obj in &self.world_objects {
+            obj.draw(&mut canvas, self.camera_x, self.camera_y, &self.sprite_manager)?;
+        }
+
+        // Draw trees with camera offset
+        for tree in self.trees.iter() {
+            tree.draw_with_offset(&mut canvas, self.camera_x, self.camera_y, &self.sprite_manager)?;
+        }
+
+        // Draw fires with camera offset
+        for fire in self.fires.iter() {
+            fire.draw_with_offset(&mut canvas, self.camera_x, self.camera_y, &self.sprite_manager)?;
+        }
+
+        // Draw fishing spots with camera offset
+        for spot in self.fishing_spots.iter() {
+            spot.draw_with_offset(&mut canvas, self.camera_x, self.camera_y, &self.sprite_manager)?;
+        }
+
+        // Draw entities with camera offset
+        for entity in self.entities.iter() {
+            entity.draw_with_offset(&mut canvas, self.camera_x, self.camera_y, &self.sprite_manager)?;
+        }
+
+        // Draw dropped items with camera offset
+        for item in self.dropped_items.iter() {
+            item.draw_with_offset(&mut canvas, self.camera_x, self.camera_y, &self.sprite_manager)?;
+        }
+
+        // Draw player
+        if let Some(player_sprite) = self.sprite_manager.get_sprite("player") {
+            canvas.draw(
+                player_sprite,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(self.player_x - self.camera_x - 16.0, self.player_y - self.camera_y - 16.0))
+                    .scale(Vec2::new(2.0, 2.0))
+            );
+        }
+
+        // Draw player health bar
+        let health_percent = self.player_combat.health as f32 / self.player_combat.max_health as f32;
+        
+        // Black background
+        canvas.draw(
+            &graphics::Quad,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(self.player_x - self.camera_x - 16.0, self.player_y - self.camera_y - 26.0))
+                .scale(Vec2::new(32.0, 5.0))
+                .color(Color::BLACK)
+        );
+
+        // Green health bar
+        canvas.draw(
+            &graphics::Quad,
+            graphics::DrawParam::new()
+                .dest(Vec2::new(self.player_x - self.camera_x - 16.0, self.player_y - self.camera_y - 26.0))
+                .scale(Vec2::new(32.0 * health_percent, 5.0))
+                .color(Color::GREEN)
+        );
+
+        // Draw UI
+        (&mut self.game_ui).draw(
+            &mut canvas,
+            &self.skills,
+            &self.inventory,
+            &self.equipment,
+            &self.bank,
+            self.player_x,
+            self.player_y,
+        )?;
+
+        canvas.finish(ctx)?;
+        Ok(())
     }
 }
 
@@ -891,6 +997,20 @@ impl EventHandler for GameState {
         // Update movement and actions
         self.update_movement(dt);
         self.update_ongoing_action(dt);
+
+        // Close bank if player moves away from chest
+        if self.game_ui.bank_visible {
+            let near_bank = self.world_objects.iter()
+                .any(|obj| matches!(obj.object_type, ObjectType::BankChest) && {
+                    let dx = obj.x - self.player_x;
+                    let dy = obj.y - self.player_y;
+                    (dx * dx + dy * dy).sqrt() < 40.0
+                });
+
+            if !near_bank {
+                self.game_ui.bank_visible = false;
+            }
+        }
 
         Ok(())
     }
@@ -959,18 +1079,15 @@ impl EventHandler for GameState {
                 .color(Color::GREEN)
         );
 
-        // Draw UI elements (these don't use camera offset)
+        // Draw UI
         (&mut self.game_ui).draw(
             &mut canvas,
             &self.skills,
             &self.inventory,
             &self.equipment,
-            &self.dropped_items,
+            &self.bank,
             self.player_x,
             self.player_y,
-            &self.entities,
-            &self.trees,
-            &self.fishing_spots,
         )?;
 
         canvas.finish(ctx)?;
@@ -994,64 +1111,11 @@ impl EventHandler for GameState {
             return Ok(());
         }
 
-        if self.game_ui.equipment_screen_visible {
-            // Check if click is in equipment area
-            if x >= 10.0 && x <= 230.0 && y >= 10.0 && y <= 350.0 {
-                // Calculate which equipment slot was clicked
-                if x >= 30.0 && x <= 70.0 { // Equipment slot width
-                    let slot_index = ((y - 60.0) / 45.0).floor() as usize;
-                    if slot_index < 4 { // 4 equipment slots
-                        match slot_index {
-                            0 => { // Weapon slot
-                                if let Some(item) = self.equipment.unequip_weapon() {
-                                    if self.inventory.add_item(item.clone()) {
-                                        self.game_ui.add_message(format!("Unequipped {}", item.name));
-                                    } else {
-                                        self.game_ui.add_message("Your inventory is full.".to_string());
-                                        // Put the item back
-                                        self.equipment.equip_weapon(item);
-                                    }
-                                }
-                            }
-                            1 => { // Head slot
-                                if let Some(item) = self.equipment.unequip_armor(ArmorSlot::Head) {
-                                    if self.inventory.add_item(item.clone()) {
-                                        self.game_ui.add_message(format!("Unequipped {}", item.name));
-                                    } else {
-                                        self.game_ui.add_message("Your inventory is full.".to_string());
-                                        // Put the item back
-                                        self.equipment.equip_armor(item);
-                                    }
-                                }
-                            }
-                            2 => { // Body slot
-                                if let Some(item) = self.equipment.unequip_armor(ArmorSlot::Body) {
-                                    if self.inventory.add_item(item.clone()) {
-                                        self.game_ui.add_message(format!("Unequipped {}", item.name));
-                                    } else {
-                                        self.game_ui.add_message("Your inventory is full.".to_string());
-                                        // Put the item back
-                                        self.equipment.equip_armor(item);
-                                    }
-                                }
-                            }
-                            3 => { // Legs slot
-                                if let Some(item) = self.equipment.unequip_armor(ArmorSlot::Legs) {
-                                    if self.inventory.add_item(item.clone()) {
-                                        self.game_ui.add_message(format!("Unequipped {}", item.name));
-                                    } else {
-                                        self.game_ui.add_message("Your inventory is full.".to_string());
-                                        // Put the item back
-                                        self.equipment.equip_armor(item);
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
+        // Check if bank is visible and handle bank clicks
+        if self.game_ui.bank_visible {
+            if self.game_ui.handle_bank_click(x, y, button, &mut self.inventory, &mut self.bank) {
+                return Ok(());
             }
-            return Ok(());
         }
 
         if self.game_ui.inventory_visible {
@@ -1062,16 +1126,29 @@ impl EventHandler for GameState {
                 let slot = slot_y * 4 + slot_x;
                 
                 if slot < self.inventory.get_items().len() {
-                    self.handle_inventory_click(slot, button);
+                    if self.game_ui.bank_visible {
+                        // Handle bank deposit
+                        if let Some(item) = self.inventory.get_item(slot).cloned() {
+                            if self.bank.add_item(item.clone()) {
+                                self.inventory.remove_item(slot);
+                                self.game_ui.add_message(format!("You deposit {}.", item.name));
+                            } else {
+                                self.game_ui.add_message("Your bank is full.".to_string());
+                            }
+                        }
+                    } else {
+                        self.handle_inventory_click(slot, button);
+                    }
                 }
-            } else {
-                // Click outside inventory - handle world interaction
+            } else if !self.game_ui.bank_visible {
+                // Only handle world clicks if bank is not visible
                 self.handle_world_click(x, y, button);
             }
-        } else if !self.game_ui.is_menu_visible() {
-            // Only handle world clicks if no menu is visible
+        } else if !self.game_ui.is_menu_visible() && !self.game_ui.bank_visible {
+            // Only handle world clicks if no menu is visible and bank is not visible
             self.handle_world_click(x, y, button);
         }
+
         Ok(())
     }
 
@@ -1083,7 +1160,7 @@ impl EventHandler for GameState {
         Ok(())
     }
 
-    fn key_down_event(&mut self, ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
+    fn key_down_event(&mut self, _ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
         match input.keycode {
             Some(KeyCode::I) => {
                 self.game_ui.toggle_inventory();
@@ -1094,24 +1171,9 @@ impl EventHandler for GameState {
             Some(KeyCode::E) => {
                 self.game_ui.toggle_equipment_screen();
             }
-            Some(KeyCode::Space) => {
-                if !self.game_ui.is_menu_visible() {
-                    self.attack_nearest_entity();
-                }
-            }
-            Some(KeyCode::F) => {
-                if !self.game_ui.is_menu_visible() {
-                    self.try_pickup_item();
-                }
-            }
-            Some(KeyCode::X) => {
-                if !self.game_ui.is_menu_visible() {
-                    self.try_chop_tree();
-                }
-            }
-            Some(KeyCode::S) => {
-                if input.mods.contains(ggez::input::keyboard::KeyMods::CTRL) {
-                    self.save_game(ctx);
+            Some(KeyCode::Escape) => {
+                if self.game_ui.bank_visible {
+                    self.game_ui.toggle_bank();
                 }
             }
             _ => {}

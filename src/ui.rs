@@ -1,4 +1,5 @@
-use ggez::{graphics::{self, Canvas, Color}, GameResult};
+use ggez::{Context, GameResult};
+use ggez::graphics::{self, Canvas, Color, Rect};
 use ggez::glam::Vec2;
 use crate::skills::Skills;
 use crate::inventory::{Inventory, DroppedItem};
@@ -7,6 +8,8 @@ use crate::inventory::ArmorSlot;
 use crate::entity::Entity;
 use crate::world::{Tree, FishingSpot};
 use crate::sprites::SpriteManager;
+use ggez::input::mouse::MouseButton;
+use crate::bank::Bank;
 
 #[derive(Debug)]
 pub struct ContextMenuItem {
@@ -14,13 +17,14 @@ pub struct ContextMenuItem {
     pub action: ContextMenuAction,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub enum ContextMenuAction {
     ChopTree,
     PickupItem,
     Attack,
     Fish,
     Examine(String),
+    OpenBank,
     None,
 }
 
@@ -114,6 +118,7 @@ pub struct GameUI {
     pub inventory_visible: bool,
     pub skills_menu_visible: bool,
     pub equipment_screen_visible: bool,
+    pub bank_visible: bool,
     mouse_x: f32,
     mouse_y: f32,
     tooltip_text: Option<String>,
@@ -137,6 +142,7 @@ impl GameUI {
             mouse_y: 0.0,
             skills_menu_visible: false,
             equipment_screen_visible: false,
+            bank_visible: false,
             sprite_manager,
             menu_bar_height: 40.0,
             messages: Vec::new(),
@@ -210,6 +216,15 @@ impl GameUI {
         }
     }
 
+    pub fn toggle_bank(&mut self) {
+        self.bank_visible = !self.bank_visible;
+        if self.bank_visible {
+            self.inventory_visible = true; // Always show inventory with bank
+            self.skills_menu_visible = false;
+            self.equipment_screen_visible = false;
+        }
+    }
+
     pub fn is_menu_visible(&self) -> bool {
         self.inventory_visible || self.skills_menu_visible || self.equipment_screen_visible || self.context_menu.visible
     }
@@ -235,7 +250,16 @@ impl GameUI {
         self.mouse_y = y;
     }
 
-    pub fn draw(&mut self, canvas: &mut Canvas, skills: &Skills, inventory: &Inventory, equipment: &Equipment, dropped_items: &[DroppedItem], player_x: f32, player_y: f32, entities: &[Entity], trees: &[Tree], fishing_spots: &[FishingSpot]) -> GameResult {
+    pub fn draw(
+        &mut self,
+        canvas: &mut Canvas,
+        skills: &Skills,
+        inventory: &Inventory,
+        equipment: &Equipment,
+        bank: &Bank,
+        player_x: f32,
+        player_y: f32,
+    ) -> GameResult {
         self.tooltip_text = None;
 
         let screen_height = 768.0; // Window height
@@ -469,6 +493,98 @@ impl GameUI {
             }
         }
 
+        if self.bank_visible {
+            // Draw bank window
+            canvas.draw(
+                &graphics::Quad,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(250.0, 10.0))
+                    .scale(Vec2::new(500.0, 600.0))
+                    .color(Color::new(0.0, 0.0, 0.0, 0.8)),
+            );
+
+            // Draw close button background
+            canvas.draw(
+                &graphics::Quad,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(720.0, 15.0))
+                    .scale(Vec2::new(20.0, 20.0))
+                    .color(Color::new(0.5, 0.0, 0.0, 0.8)),
+            );
+
+            // Draw close button (X)
+            let close_button = graphics::Text::new("X");
+            canvas.draw(
+                &close_button,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(726.0, 17.0))
+                    .color(Color::WHITE),
+            );
+
+            let bank_text = graphics::Text::new("Bank:".to_string());
+            canvas.draw(
+                &bank_text,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(270.0, 30.0))
+                    .color(Color::WHITE),
+            );
+
+            // Draw instructions
+            let instructions = graphics::Text::new("Left-click: Withdraw | Right-click: Deposit");
+            canvas.draw(
+                &instructions,
+                graphics::DrawParam::new()
+                    .dest(Vec2::new(270.0, 420.0))
+                    .color(Color::WHITE),
+            );
+
+            // Draw bank slots (10x8 grid)
+            for i in 0..80 {
+                let row = i / 10;
+                let col = i % 10;
+                let x = 270.0 + col as f32 * 45.0;
+                let y = 50.0 + row as f32 * 45.0;
+
+                // Draw slot background
+                canvas.draw(
+                    &graphics::Quad,
+                    graphics::DrawParam::new()
+                        .dest(Vec2::new(x, y))
+                        .scale(Vec2::new(40.0, 40.0))
+                        .color(Color::new(0.3, 0.3, 0.3, 0.8)),
+                );
+
+                if let Some(bank_slot) = bank.get_item(i) {
+                    // Show tooltip on hover
+                    if self.mouse_x >= x && self.mouse_x <= x + 40.0 && 
+                       self.mouse_y >= y && self.mouse_y <= y + 40.0 {
+                        self.tooltip_text = Some(format!("{} ({})", bank_slot.item.name, bank_slot.quantity));
+                    }
+
+                    let sprite_name = bank_slot.item.name.to_lowercase().replace(" ", "_");
+                    if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
+                        canvas.draw(
+                            sprite,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(x + 4.0, y + 4.0))
+                                .scale(Vec2::new(2.0, 2.0))
+                        );
+                    }
+
+                    // Draw quantity if more than 1
+                    if bank_slot.quantity > 1 {
+                        let quantity_text = graphics::Text::new(bank_slot.quantity.to_string());
+                        canvas.draw(
+                            &quantity_text,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(x + 25.0, y + 2.0))
+                                .color(Color::WHITE),
+                        );
+                    }
+                }
+            }
+        }
+
         // Draw menu bar
         canvas.draw(
             &graphics::Quad,
@@ -543,6 +659,61 @@ impl GameUI {
                 }
                 return true;
             }
+        }
+        false
+    }
+
+    pub fn handle_bank_click(&mut self, x: f32, y: f32, button: MouseButton, inventory: &mut Inventory, bank: &mut Bank) -> bool {
+        if !self.bank_visible {
+            return false;
+        }
+
+        // Check if click is on close button (20x20 pixel area)
+        if x >= 720.0 && x <= 740.0 && y >= 15.0 && y <= 35.0 {
+            self.toggle_bank();
+            return true;
+        }
+
+        // Check if click is in bank window area
+        if x >= 250.0 && x <= 750.0 && y >= 10.0 && y <= 610.0 {
+            // Check if click is in bank slots area
+            if x >= 270.0 && x <= 720.0 && y >= 50.0 && y <= 410.0 {
+                let slot_x = ((x - 270.0) / 45.0).floor() as usize;
+                let slot_y = ((y - 50.0) / 45.0).floor() as usize;
+                let slot = slot_y * 10 + slot_x;
+
+                if slot < 80 {
+                    match button {
+                        MouseButton::Left => {
+                            // Withdraw item from bank to inventory
+                            if let Some(item) = bank.remove_item(slot) {
+                                if inventory.add_item(item.clone()) {
+                                    self.add_message(format!("You withdraw {}.", item.name));
+                                } else {
+                                    bank.add_item(item.clone()); // Put item back in bank
+                                    self.add_message("Your inventory is full.".to_string());
+                                }
+                            }
+                        }
+                        MouseButton::Right => {
+                            // Deposit item from inventory to bank
+                            if let Some(selected_slot) = self.selected_slot {
+                                if let Some(item) = inventory.get_item(selected_slot).cloned() {
+                                    if bank.add_item(item.clone()) {
+                                        inventory.remove_item(selected_slot);
+                                        self.add_message(format!("You deposit {}.", item.name));
+                                    } else {
+                                        self.add_message("Your bank is full.".to_string());
+                                    }
+                                }
+                                self.selected_slot = None;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            return true;
         }
         false
     }

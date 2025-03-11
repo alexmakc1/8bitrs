@@ -305,6 +305,15 @@ impl SpriteManager {
             )?
         );
 
+        // Load bank chest sprite
+        sprites.insert(
+            "bank_chest".to_string(),
+            Image::from_bytes(
+                ctx,
+                include_bytes!("../assets/sprites/bank_chest.png")
+            )?
+        );
+
         Ok(SpriteManager { sprites })
     }
 
