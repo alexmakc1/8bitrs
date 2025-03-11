@@ -247,6 +247,15 @@ impl SpriteManager {
             )?
         );
 
+        // Load currency sprites
+        sprites.insert(
+            "gp".to_string(),
+            Image::from_bytes(
+                ctx,
+                include_bytes!("../assets/sprites/gp.png")
+            )?
+        );
+
         // Load cow drop sprites
         sprites.insert(
             "cow_hide".to_string(),

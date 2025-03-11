@@ -1113,11 +1113,17 @@ impl EventHandler for GameState {
                     if self.game_ui.bank_visible {
                         // Handle bank deposit
                         if let Some(item) = self.inventory.get_item(slot).cloned() {
-                            if self.bank.add_item(item.clone()) {
-                                self.inventory.remove_item(slot);
-                                self.game_ui.add_message(format!("You deposit {}.", item.name));
+                            if item.is_stackable() {
+                                // For stackable items, show deposit options
+                                self.game_ui.handle_inventory_click(slot, button, x, y, &mut self.inventory);
                             } else {
-                                self.game_ui.add_message("Your bank is full.".to_string());
+                                // For non-stackable items, deposit directly
+                                if self.bank.add_item(item.clone()) {
+                                    self.inventory.remove_item(slot);
+                                    self.game_ui.add_message(format!("You deposit {}.", item.name));
+                                } else {
+                                    self.game_ui.add_message("Your bank is full.".to_string());
+                                }
                             }
                         }
                     } else {

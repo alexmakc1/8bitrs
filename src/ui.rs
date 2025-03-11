@@ -369,7 +369,11 @@ impl GameUI {
                         self.tooltip_text = Some(format!("{} ({})", item.name, item.quantity));
                     }
 
-                    let sprite_name = item.name.to_lowercase().replace(" ", "_");
+                    let sprite_name = if item.name == "GP" {
+                        "gp".to_string()
+                    } else {
+                        item.name.to_lowercase().replace(" ", "_")
+                    };
                     
                     if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
                         canvas.draw(
@@ -379,8 +383,8 @@ impl GameUI {
                                 .scale(Vec2::new(2.0, 2.0))
                         );
 
-                        // Draw quantity if more than 1 or if item is stackable
-                        if item.quantity > 1 || item.is_stackable() {
+                        // Always show quantity for stackable items or when quantity > 1
+                        if item.is_stackable() || item.quantity > 1 {
                             let quantity_text = graphics::Text::new(item.quantity.to_string());
                             canvas.draw(
                                 &quantity_text,
@@ -590,7 +594,12 @@ impl GameUI {
                         self.tooltip_text = Some(format!("{} ({})", bank_slot.name, bank_slot.quantity));
                     }
 
-                    let sprite_name = bank_slot.name.to_lowercase().replace(" ", "_");
+                    let sprite_name = if bank_slot.name == "GP" {
+                        "gp".to_string()
+                    } else {
+                        bank_slot.name.to_lowercase().replace(" ", "_")
+                    };
+                    
                     if let Some(sprite) = self.sprite_manager.get_sprite(&sprite_name) {
                         canvas.draw(
                             sprite,
@@ -598,10 +607,19 @@ impl GameUI {
                                 .dest(Vec2::new(x + 4.0, y + 4.0))
                                 .scale(Vec2::new(2.0, 2.0))
                         );
+                    } else {
+                        println!("Missing sprite for item: {}", sprite_name);
+                        let text = graphics::Text::new(bank_slot.name.chars().next().unwrap_or('?').to_string());
+                        canvas.draw(
+                            &text,
+                            graphics::DrawParam::new()
+                                .dest(Vec2::new(x + 15.0, y + 15.0))
+                                .color(Color::WHITE),
+                        );
                     }
 
-                    // Draw quantity if more than 1
-                    if bank_slot.quantity > 1 {
+                    // Always show quantity for stackable items or when quantity > 1
+                    if bank_slot.is_stackable() || bank_slot.quantity > 1 {
                         let quantity_text = graphics::Text::new(bank_slot.quantity.to_string());
                         canvas.draw(
                             &quantity_text,
@@ -812,7 +830,8 @@ impl GameUI {
         if let Some(item) = inventory.get_item(slot) {
             match button {
                 MouseButton::Left => {
-                    // ... existing left-click handling ...
+                    self.selected_inventory_slot = Some(slot);
+                    true
                 }
                 MouseButton::Right => {
                     if self.bank_visible && item.is_stackable() {
@@ -821,17 +840,20 @@ impl GameUI {
                             ("Deposit-10".to_string(), ContextMenuAction::DepositTen),
                             ("Deposit-100".to_string(), ContextMenuAction::DepositHundred),
                             ("Deposit-X".to_string(), ContextMenuAction::DepositX),
-                            ("Examine".to_string(), ContextMenuAction::Examine(format!("This is {} GP.", item.quantity))),
+                            ("Examine".to_string(), ContextMenuAction::Examine(format!("You have {} {}.", item.quantity, item.name))),
                         ];
                         self.context_menu.show(x, y, actions);
                         self.selected_inventory_slot = Some(slot);
-                        return true;
+                        true
+                    } else {
+                        false
                     }
                 }
-                _ => {}
+                _ => false
             }
+        } else {
+            false
         }
-        false
     }
 
     pub fn handle_context_action(&mut self, action: ContextMenuAction, inventory: &mut Inventory, bank: &mut Bank) {
@@ -873,6 +895,11 @@ impl GameUI {
     fn deposit_items(&mut self, amount: u32, inventory: &mut Inventory, bank: &mut Bank) {
         if let Some(slot) = self.selected_inventory_slot {
             if let Some(item) = inventory.get_item(slot) {
+                if !item.is_stackable() {
+                    self.add_message("You can only deposit stackable items in stacks.".to_string());
+                    return;
+                }
+                
                 let deposit_amount = amount.min(item.quantity);
                 if let Some(deposited_item) = inventory.remove_items(slot, deposit_amount) {
                     if bank.add_item(deposited_item.clone()) {
