@@ -3,6 +3,7 @@ use ggez::glam::Vec2;
 use crate::sprites::SpriteManager;
 use crate::skills::Skills;
 use crate::inventory::{Item, ItemType, ToolType};
+use rand::Rng;
 
 #[derive(Debug, Clone)]
 pub enum ObjectType {
@@ -28,6 +29,7 @@ pub struct WorldObject {
     pub object_type: ObjectType,
     pub blocks_movement: bool,
     pub health: u8,
+    pub fallen: bool,
 }
 
 impl WorldObject {
@@ -53,11 +55,15 @@ impl WorldObject {
             object_type,
             blocks_movement,
             health,
+            fallen: false,
         }
     }
 
     pub fn draw(&self, canvas: &mut Canvas, offset_x: f32, offset_y: f32, sprites: &SpriteManager) -> GameResult {
-        let sprite_name = self.object_type.get_sprite_name();
+        let sprite_name = match &self.object_type {
+            ObjectType::Tree if self.fallen => "tree_stump",
+            _ => self.object_type.get_sprite_name(),
+        };
 
         if let Some(sprite) = sprites.get_sprite(sprite_name) {
             canvas.draw(
@@ -97,19 +103,35 @@ impl WorldObject {
     }
 
     pub fn try_chop(&mut self, skills: &Skills, axe: Option<&Item>) -> bool {
-        if self.is_chopped() || !matches!(self.object_type, ObjectType::Tree) {
+        if self.is_chopped() || !matches!(self.object_type, ObjectType::Tree) || self.fallen {
             return false;
         }
 
         if let Some(item) = axe {
             if let ItemType::Tool(ToolType::Axe { woodcutting_level }) = &item.item_type {
                 if u32::from(skills.woodcutting.get_level()) >= *woodcutting_level {
-                    self.health -= 1;
                     return true;
                 }
             }
         }
         false
+    }
+
+    pub fn set_chopped(&mut self) {
+        if matches!(self.object_type, ObjectType::Tree) {
+            self.health = 0;
+            self.fallen = true;
+            self.blocks_movement = false;  // Allow walking over stumps
+        }
+    }
+
+    pub fn get_random_logs(&self) -> u32 {
+        if self.is_chopped() {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(1..=35)
+        } else {
+            0
+        }
     }
 }
 

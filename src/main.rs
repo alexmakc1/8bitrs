@@ -275,15 +275,31 @@ impl GameState {
                 self.target_y = None;
                 
                 match self.pending_action.clone() {
+                    PendingAction::PickupItem(index) => {
+                        if index < self.dropped_items.len() {
+                            let dropped_item = &self.dropped_items[index];
+                            if self.inventory.add_item(dropped_item.item.clone()) {
+                                self.game_ui.add_message(format!("You pick up the {}.", dropped_item.item.name));
+                                self.dropped_items.remove(index);
+                            } else {
+                                self.game_ui.add_message("Your inventory is full.".to_string());
+                            }
+                        }
+                    }
                     PendingAction::ChopTree(tree_index) => {
                         if tree_index < self.world_objects.len() {
                             let tree = &self.world_objects[tree_index];
-                            self.ongoing_action = OngoingAction::ChoppingTree { 
-                                x: tree.x, 
-                                y: tree.y, 
-                                tree_index 
-                            };
-                            self.action_timer = 0.0;
+                            if !tree.fallen {
+                                self.ongoing_action = OngoingAction::ChoppingTree { 
+                                    x: tree.x, 
+                                    y: tree.y, 
+                                    tree_index 
+                                };
+                                self.action_timer = 0.0;
+                                self.game_ui.add_message("You begin chopping the tree.".to_string());
+                            } else {
+                                self.game_ui.add_message("This tree is already chopped down.".to_string());
+                            }
                         }
                     }
                     PendingAction::Attack => {
@@ -300,17 +316,6 @@ impl GameState {
                         {
                             self.ongoing_action = OngoingAction::Fishing { x, y, spot_index: index };
                             self.action_timer = 0.0;
-                        }
-                    }
-                    PendingAction::PickupItem(index) => {
-                        if index < self.dropped_items.len() {
-                            let dropped_item = &self.dropped_items[index];
-                            if self.inventory.add_item(dropped_item.item.clone()) {
-                                self.dropped_items.remove(index);
-                                self.game_ui.add_message("You pick up the item.".to_string());
-                            } else {
-                                self.game_ui.add_message("Your inventory is full.".to_string());
-                            }
                         }
                     }
                     PendingAction::None => {}
@@ -364,7 +369,7 @@ impl GameState {
         
         if self.action_timer <= 0.0 {
             match &self.ongoing_action.clone() {
-                OngoingAction::ChoppingTree { x, y, tree_index } => {
+                OngoingAction::ChoppingTree { x: _, y: _, tree_index } => {
                     if *tree_index < self.world_objects.len() {
                         let tree = &mut self.world_objects[*tree_index];
                         let tree_x = tree.x;
@@ -384,15 +389,48 @@ impl GameState {
                             .find(|item| matches!(&item.item_type, ItemType::Tool(ToolType::Axe { .. })));
 
                         if tree.try_chop(&self.skills, axe) {
-                            if self.inventory.add_item(Item::logs()) {
-                                self.skills.gain_woodcutting_xp(25);
-                                self.game_ui.add_message("You get some logs.".to_string());
-                                self.action_timer = 3.0;
-                            } else {
-                                self.game_ui.add_message("Your inventory is full.".to_string());
-                                self.cancel_ongoing_action();
+                            if self.action_timer <= 0.0 {
+                                self.game_ui.add_message("You swing your axe at the tree.".to_string());
+                                
+                                if self.inventory.add_item(Item::logs()) {
+                                    self.skills.gain_woodcutting_xp(25);
+                                    self.game_ui.add_message("You get a log.".to_string());
+                                    
+                                    // Random chance (20%) for the tree to fall after getting a log
+                                    let mut rng = rand::thread_rng();
+                                    if rng.gen_bool(0.20) {
+                                        tree.set_chopped();
+                                        self.game_ui.add_message("The tree falls down!".to_string());
+                                        self.cancel_ongoing_action();
+                                        return;
+                                    }
+                                } else {
+                                    self.game_ui.add_message("Your inventory is full.".to_string());
+                                    self.cancel_ongoing_action();
+                                    return;
+                                }
                             }
+                            
+                            self.action_timer = 3.0;
                         } else {
+                            if !matches!(tree.object_type, ObjectType::Tree) {
+                                self.game_ui.add_message("You can't chop that.".to_string());
+                            } else if tree.is_chopped() || tree.fallen {
+                                self.game_ui.add_message("This tree is already chopped down.".to_string());
+                            } else {
+                                let axe_level = axe.and_then(|item| {
+                                    if let ItemType::Tool(ToolType::Axe { woodcutting_level }) = &item.item_type {
+                                        Some(woodcutting_level)
+                                    } else {
+                                        None
+                                    }
+                                });
+
+                                match axe_level {
+                                    None => self.game_ui.add_message("You need an axe to chop trees.".to_string()),
+                                    Some(level) => self.game_ui.add_message(format!("You need level {} Woodcutting to use this axe.", level)),
+                                }
+                            }
                             self.cancel_ongoing_action();
                         }
                     } else {
@@ -502,10 +540,9 @@ impl GameState {
                     
                     if target_combat.is_dead() {
                         self.game_ui.add_message(format!("The {} is dead!", target_name.chars().next().unwrap().to_uppercase().collect::<String>() + &target_name[1..]));
-                        if let Some(drops) = target.interact(&mut self.skills) {
-                            for item in drops {
-                                self.dropped_items.push(DroppedItem::new(item, target_x, target_y));
-                            }
+                        let drops = target.get_drops();
+                        for item in drops {
+                            self.dropped_items.push(DroppedItem::new(item, target_x, target_y));
                         }
                         self.skills.gain_attack_xp(10);
                         self.skills.gain_strength_xp(10);
@@ -551,27 +588,51 @@ impl GameState {
                                     }
                                 }
                                 _ => {
-                                    if let ItemType::Resource(ResourceType::RawFish { cooking_level, .. }) = &item.item_type {
+                                    let item_clone = item.clone();
+                                    if let ItemType::Resource(ResourceType::RawFish { cooking_level, .. }) = &item_clone.item_type {
                                         if let Some(fire) = self.fires.iter()
                                             .find(|f| f.is_near(self.player_x, self.player_y))
                                         {
                                             if u32::from(self.skills.cooking.get_level()) >= *cooking_level {
-                                                let raw_fish = item.clone();
-                                                
-                                                if let Some(cooked_item) = fire.try_cook(&raw_fish, self.skills.cooking.get_level()) {
+                                                if let Some(cooked_item) = fire.try_cook(&item_clone, self.skills.cooking.get_level()) {
                                                     self.inventory.remove_item(slot);
                                                     if self.inventory.add_item(cooked_item.clone()) {
                                                         match cooked_item.name.as_str() {
-                                                            "Burnt Fish" => self.game_ui.add_message("You accidentally burn the fish.".to_string()),
+                                                            "Burnt fish" => self.game_ui.add_message("You accidentally burn the fish.".to_string()),
+                                                            "Burnt beef" => self.game_ui.add_message("You accidentally burn the beef.".to_string()),
                                                             _ => {
-                                                                self.game_ui.add_message(format!("You successfully cook the {}.", raw_fish.name.strip_prefix("Raw ").unwrap_or(&raw_fish.name)));
+                                                                self.game_ui.add_message(format!("You successfully cook the {}.", item_clone.name.strip_prefix("Raw ").unwrap_or(&item_clone.name)));
                                                                 self.skills.gain_cooking_xp(30);
                                                             }
                                                         }
                                                     }
                                                 }
                                             } else {
-                                                self.game_ui.add_message(format!("You need level {} Cooking to cook this fish.", cooking_level));
+                                                self.game_ui.add_message(format!("You need level {} Cooking to cook this.", cooking_level));
+                                            }
+                                        } else {
+                                            self.game_ui.add_message("You need to be near a fire to cook food.".to_string());
+                                        }
+                                    }
+                                    if let ItemType::Resource(ResourceType::RawBeef { cooking_level, .. }) = &item_clone.item_type {
+                                        if let Some(fire) = self.fires.iter()
+                                            .find(|f| f.is_near(self.player_x, self.player_y))
+                                        {
+                                            if u32::from(self.skills.cooking.get_level()) >= *cooking_level {
+                                                if let Some(cooked_item) = fire.try_cook(&item_clone, self.skills.cooking.get_level()) {
+                                                    self.inventory.remove_item(slot);
+                                                    if self.inventory.add_item(cooked_item.clone()) {
+                                                        match cooked_item.name.as_str() {
+                                                            "Burnt beef" => self.game_ui.add_message("You accidentally burn the beef.".to_string()),
+                                                            _ => {
+                                                                self.game_ui.add_message(format!("You successfully cook the {}.", item_clone.name.strip_prefix("Raw ").unwrap_or(&item_clone.name)));
+                                                                self.skills.gain_cooking_xp(30);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                self.game_ui.add_message(format!("You need level {} Cooking to cook this.", cooking_level));
                                             }
                                         } else {
                                             self.game_ui.add_message("You need to be near a fire to cook food.".to_string());
@@ -628,23 +689,6 @@ impl GameState {
                 self.player_y,
             ));
         }
-    }
-
-    fn try_pickup_item(&mut self) {
-        let pickup_range = 40.0;
-        self.dropped_items.retain_mut(|item| {
-            let dx = item.x - self.player_x;
-            let dy = item.y - self.player_y;
-            let distance = (dx * dx + dy * dy).sqrt();
-
-            if distance < pickup_range && item.can_pickup() {
-                if self.inventory.add_item(item.item.clone()) {
-                    self.game_ui.add_message(format!("You picked up a {}.", item.item.name));
-                    return false;
-                }
-            }
-            true
-        });
     }
 
     fn try_chop_tree(&mut self) {
@@ -707,8 +751,16 @@ impl GameState {
                 if (dx * dx + dy * dy).sqrt() < 40.0 {
                     match obj.object_type {
                         ObjectType::Tree => {
-                            actions.push(("Chop tree".to_string(), ContextMenuAction::ChopTree));
-                            actions.push(("Examine tree".to_string(), ContextMenuAction::Examine("A sturdy tree good for woodcutting.".to_string())));
+                            if !obj.fallen {
+                                actions.push(("Chop tree".to_string(), ContextMenuAction::ChopTree));
+                            }
+                            actions.push(("Examine tree".to_string(), ContextMenuAction::Examine(
+                                if obj.fallen {
+                                    "A tree stump. It will regrow soon.".to_string()
+                                } else {
+                                    "A sturdy tree good for woodcutting.".to_string()
+                                }
+                            )));
                         }
                         ObjectType::Water => {
                             actions.push(("Examine".to_string(), ContextMenuAction::Examine("Clear blue water.".to_string())));
@@ -744,7 +796,7 @@ impl GameState {
             }
 
             // Check for nearby dropped items
-            if let Some((index, item)) = self.dropped_items.iter().enumerate()
+            if let Some((item_index, item)) = self.dropped_items.iter().enumerate()
                 .find(|(_, i)| {
                     let dx = i.x - world_x;
                     let dy = i.y - world_y;
@@ -794,12 +846,16 @@ impl GameState {
     fn handle_context_action(&mut self, action: ContextMenuAction, x: f32, y: f32) {
         match action {
             ContextMenuAction::ChopTree => {
-                if let Some((tree_index, _)) = self.trees.iter().enumerate()
-                    .find(|(_, tree)| {
-                        let dx = tree.x - x;
-                        let dy = tree.y - y;
-                        dx * dx + dy * dy < 100.0
+                if let Some((tree_index, tree)) = self.world_objects.iter().enumerate()
+                    .find(|(_, obj)| {
+                        matches!(obj.object_type, ObjectType::Tree) && !obj.fallen &&
+                        {
+                            let dx = obj.x - x;
+                            let dy = obj.y - y;
+                            dx * dx + dy * dy < 100.0
+                        }
                     }) {
+                    self.game_ui.add_message("You walk towards the tree...".to_string());
                     self.set_destination(x, y, PendingAction::ChopTree(tree_index));
                 }
             }
@@ -808,9 +864,10 @@ impl GameState {
                     .find(|(_, item)| {
                         let dx = item.x - x;
                         let dy = item.y - y;
-                        dx * dx + dy * dy < 100.0
+                        dx * dx + dy * dy < 1600.0  // 40 unit radius squared
                     }) {
                     self.set_destination(x, y, PendingAction::PickupItem(item_index));
+                    self.game_ui.add_message("Walking to pick up the item...".to_string());
                 }
             }
             ContextMenuAction::Attack => {

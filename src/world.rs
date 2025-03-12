@@ -14,6 +14,7 @@ pub struct Tree {
     pub health: u8,
     pub respawn_timer: Option<f32>,
     tree_type: TreeType,
+    pub fallen: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -30,6 +31,7 @@ impl Tree {
             health: 3,
             respawn_timer: None,
             tree_type: TreeType::Normal,
+            fallen: false,
         }
     }
 
@@ -40,6 +42,7 @@ impl Tree {
             health: 255, // Walls can't be chopped
             respawn_timer: None,
             tree_type: TreeType::Wall,
+            fallen: false,
         }
     }
 
@@ -49,6 +52,7 @@ impl Tree {
             if *timer <= 0.0 {
                 self.health = 3;
                 self.respawn_timer = None;
+                self.fallen = false;
             }
         }
     }
@@ -60,7 +64,7 @@ impl Tree {
     pub fn draw_with_offset(&self, canvas: &mut Canvas, offset_x: f32, offset_y: f32, sprites: &SpriteManager) -> GameResult {
         let sprite_name = if self.tree_type == TreeType::Wall {
             "wall"
-        } else if self.health == 0 {
+        } else if self.fallen {
             "tree_stump"
         } else {
             "tree"
@@ -100,6 +104,7 @@ impl Tree {
                 if u32::from(skills.woodcutting.get_level()) >= *woodcutting_level {
                     self.health -= 1;
                     if self.is_chopped() {
+                        self.fallen = true;
                         self.respawn_timer = Some(30.0); // Tree respawns after 30 seconds
                     }
                     return true;
@@ -107,6 +112,15 @@ impl Tree {
             }
         }
         false
+    }
+
+    pub fn get_random_logs(&self) -> u32 {
+        if self.is_chopped() {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(1..=35)
+        } else {
+            0
+        }
     }
 }
 
@@ -156,28 +170,47 @@ impl Fire {
         (dx * dx + dy * dy).sqrt() < 40.0
     }
 
-    pub fn try_cook(&self, raw_fish: &Item, cooking_level: u8) -> Option<Item> {
-        if let ItemType::Resource(ResourceType::RawFish { cooking_level: required_level, .. }) = &raw_fish.item_type {
-            if u32::from(cooking_level) >= *required_level {
-                let mut rng = rand::thread_rng();
-                let success_chance = 0.3 + (cooking_level as f64 * 0.03); // 30% base chance + 3% per level
-                
-                if rng.gen_bool(success_chance) {
-                    // Successfully cooked
-                    match raw_fish.name.as_str() {
-                        "Raw Shrimp" => Some(Item::cooked_shrimp()),
-                        "Raw Trout" => Some(Item::cooked_trout()),
-                        _ => None,
+    pub fn try_cook(&self, raw_item: &Item, cooking_level: u8) -> Option<Item> {
+        let mut rng = rand::thread_rng();
+        
+        match &raw_item.item_type {
+            ItemType::Resource(ResourceType::RawFish { cooking_level: req_level, burn_level }) => {
+                if u32::from(cooking_level) >= *req_level {
+                    // Higher cooking level = less chance to burn
+                    let burn_chance = if u32::from(cooking_level) >= *burn_level {
+                        0.0 // Never burn after reaching burn level
+                    } else {
+                        0.6 - (cooking_level as f64 * 0.02) // 2% less chance to burn per level
+                    };
+                    
+                    if rng.gen_bool(burn_chance) {
+                        Some(Item::burnt_fish())
+                    } else {
+                        Some(Item::cooked_fish())
                     }
                 } else {
-                    // Burnt the fish
-                    Some(Item::burnt_fish())
+                    None
                 }
-            } else {
-                None
             }
-        } else {
-            None
+            ItemType::Resource(ResourceType::RawBeef { cooking_level: req_level, burn_level }) => {
+                if u32::from(cooking_level) >= *req_level {
+                    // Higher cooking level = less chance to burn
+                    let burn_chance = if u32::from(cooking_level) >= *burn_level {
+                        0.0 // Never burn after reaching burn level
+                    } else {
+                        0.4 - (cooking_level as f64 * 0.02) // 2% less chance to burn per level, starts at 40% instead of 60%
+                    };
+                    
+                    if rng.gen_bool(burn_chance) {
+                        Some(Item::burnt_beef())
+                    } else {
+                        Some(Item::cooked_beef())
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
     }
 }

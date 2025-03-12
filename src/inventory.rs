@@ -46,8 +46,11 @@ pub enum ToolType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResourceType {
     Logs { firemaking_level: u32 },
-    RawFish { fishing_level: u32, cooking_level: u32, healing: u32 },
+    RawFish { cooking_level: u32, burn_level: u32 },
     CookedFish { healing: u32 },
+    BurntFish,
+    RawBeef { cooking_level: u32, burn_level: u32 },
+    BurntBeef,
     Bait,
     Hide,
     Bones,
@@ -181,9 +184,8 @@ impl Item {
         Item {
             name: "Raw Shrimp".to_string(),
             item_type: ItemType::Resource(ResourceType::RawFish { 
-                fishing_level: 1, 
-                cooking_level: 1,
-                healing: 3 
+                cooking_level: 1, 
+                burn_level: 1 
             }),
             stackable: false,
             quantity: 1,
@@ -194,9 +196,8 @@ impl Item {
         Item {
             name: "Raw Trout".to_string(),
             item_type: ItemType::Resource(ResourceType::RawFish { 
-                fishing_level: 15, 
-                cooking_level: 15,
-                healing: 7 
+                cooking_level: 15, 
+                burn_level: 15 
             }),
             stackable: false,
             quantity: 1,
@@ -221,10 +222,19 @@ impl Item {
         }
     }
 
+    pub fn cooked_fish() -> Self {
+        Self {
+            name: "Cooked fish".to_string(),
+            item_type: ItemType::Resource(ResourceType::CookedFish { healing: 3 }),
+            stackable: false,
+            quantity: 1,
+        }
+    }
+
     pub fn burnt_fish() -> Self {
-        Item {
-            name: "Burnt Fish".to_string(),
-            item_type: ItemType::Resource(ResourceType::CookedFish { healing: 0 }),
+        Self {
+            name: "Burnt fish".to_string(),
+            item_type: ItemType::Resource(ResourceType::BurntFish),
             stackable: false,
             quantity: 1,
         }
@@ -241,7 +251,7 @@ impl Item {
 
     pub fn cow_hide() -> Self {
         Item {
-            name: "Cow Hide".to_string(),
+            name: "Cow hide".to_string(),
             item_type: ItemType::Resource(ResourceType::Hide),
             stackable: false,
             quantity: 1,
@@ -252,6 +262,36 @@ impl Item {
         Item {
             name: "Bones".to_string(),
             item_type: ItemType::Resource(ResourceType::Bones),
+            stackable: false,
+            quantity: 1,
+        }
+    }
+
+    pub fn raw_beef() -> Self {
+        Item {
+            name: "Raw beef".to_string(),
+            item_type: ItemType::Resource(ResourceType::RawBeef {
+                cooking_level: 1,
+                burn_level: 30,
+            }),
+            stackable: false,
+            quantity: 1,
+        }
+    }
+
+    pub fn cooked_beef() -> Self {
+        Item {
+            name: "Cooked beef".to_string(),
+            item_type: ItemType::Food(8), // Heals 8 HP like in RuneScape
+            stackable: false,
+            quantity: 1,
+        }
+    }
+
+    pub fn burnt_beef() -> Self {
+        Item {
+            name: "Burnt beef".to_string(),
+            item_type: ItemType::Resource(ResourceType::BurntBeef),
             stackable: false,
             quantity: 1,
         }
@@ -322,11 +362,19 @@ impl DroppedItem {
         let sprite_name = match &self.item.item_type {
             ItemType::Tool(ToolType::Axe { .. }) => "axe",
             ItemType::Resource(ResourceType::Logs { .. }) => "logs",
-            ItemType::Resource(ResourceType::RawFish { .. }) | 
+            ItemType::Resource(ResourceType::RawFish { .. }) => "fish",
             ItemType::Resource(ResourceType::CookedFish { .. }) => "fish",
             ItemType::Resource(ResourceType::Hide) => "cow_hide",
             ItemType::Resource(ResourceType::Bones) => "bones",
-            ItemType::Food(_) => "beef",
+            ItemType::Resource(ResourceType::RawBeef { .. }) => "raw_beef",
+            ItemType::Resource(ResourceType::BurntBeef) => "burnt_beef",
+            ItemType::Food(_) => {
+                if self.item.name.contains("beef") {
+                    "cooked_beef"
+                } else {
+                    "fish" // Default for other food items
+                }
+            },
             _ => "sword", // Default to sword sprite for unknown items
         };
 

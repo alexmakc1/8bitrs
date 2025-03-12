@@ -44,6 +44,7 @@ impl EntityType {
         match self {
             EntityType::Goblin(_) => DropTable {
                 entries: vec![
+                    DropTableEntry { item: Item::bones, chance: 100.0 },         // 100% chance
                     DropTableEntry { item: Item::bronze_sword, chance: 5.0 },     // 5% chance
                     DropTableEntry { item: Item::bronze_helmet, chance: 5.0 },    // 5% chance
                     DropTableEntry { item: Item::bronze_platebody, chance: 5.0 }, // 5% chance
@@ -56,7 +57,7 @@ impl EntityType {
             },
             EntityType::Cow(_) => DropTable {
                 entries: vec![
-                    DropTableEntry { item: Item::beef, chance: 100.0 },      // 100% chance
+                    DropTableEntry { item: Item::raw_beef, chance: 100.0 },   // 100% chance
                     DropTableEntry { item: Item::cow_hide, chance: 100.0 },  // 100% chance
                     DropTableEntry { item: Item::bones, chance: 100.0 },     // 100% chance
                 ],
@@ -70,6 +71,10 @@ pub struct Entity {
     pub y: f32,
     pub entity_type: EntityType,
     pub respawn_timer: Option<f32>,
+    spawn_x: f32,
+    spawn_y: f32,
+    movement_timer: f32,
+    movement_target: Option<(f32, f32)>,
 }
 
 impl Entity {
@@ -79,6 +84,10 @@ impl Entity {
             y,
             entity_type: EntityType::Goblin(Combat::new(10)), // Goblins have 10 HP
             respawn_timer: None,
+            spawn_x: x,
+            spawn_y: y,
+            movement_timer: 0.0,
+            movement_target: None,
         }
     }
 
@@ -88,6 +97,10 @@ impl Entity {
             y,
             entity_type: EntityType::Cow(Combat::new(8)), // Cows have 8 HP
             respawn_timer: None,
+            spawn_x: x,
+            spawn_y: y,
+            movement_timer: 0.0,
+            movement_target: None,
         }
     }
 
@@ -96,12 +109,51 @@ impl Entity {
             *timer -= dt;
             if *timer <= 0.0 {
                 self.respawn_timer = None;
-                // Reset goblin health
+                // Reset health and position
                 let combat = match &mut self.entity_type {
                     EntityType::Goblin(combat) => combat,
                     EntityType::Cow(combat) => combat,
                 };
                 *combat = Combat::new(10);
+                self.x = self.spawn_x;
+                self.y = self.spawn_y;
+                self.movement_target = None;
+            }
+            return;
+        }
+
+        // Update movement
+        self.movement_timer -= dt;
+        if self.movement_timer <= 0.0 {
+            let mut rng = rand::thread_rng();
+            // 30% chance to start moving
+            if rng.gen_bool(0.3) {
+                // Pick a random point within 100 pixels of spawn point
+                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                let distance = rng.gen_range(0.0..100.0);
+                let target_x = self.spawn_x + angle.cos() * distance;
+                let target_y = self.spawn_y + angle.sin() * distance;
+                self.movement_target = Some((target_x, target_y));
+            } else {
+                self.movement_target = None;
+            }
+            self.movement_timer = rng.gen_range(2.0..5.0); // Set next movement check in 2-5 seconds
+        }
+
+        // Move towards target if we have one
+        if let Some((target_x, target_y)) = self.movement_target {
+            let dx = target_x - self.x;
+            let dy = target_y - self.y;
+            let distance = (dx * dx + dy * dy).sqrt();
+            
+            if distance > 5.0 { // Only move if we're not very close to target
+                let speed = 50.0; // pixels per second
+                let move_distance = speed * dt;
+                let ratio = move_distance / distance;
+                self.x += dx * ratio;
+                self.y += dy * ratio;
+            } else {
+                self.movement_target = None;
             }
         }
     }
@@ -170,27 +222,19 @@ impl Entity {
         self.entity_type.get_drop_table().roll_drops()
     }
 
-    pub fn interact(&mut self, _player_skills: &mut Skills) -> Option<Vec<Item>> {
-        if self.respawn_timer.is_some() {
-            return None;
-        }
-
-        match &mut self.entity_type {
-            EntityType::Goblin(combat) => {
-                if combat.is_dead() {
-                    self.respawn_timer = Some(5.0); // 5 seconds to respawn
-                    Some(self.get_drops())
+    pub fn interact(&self, skills: &mut Skills) -> Option<Vec<Item>> {
+        match &self.entity_type {
+            EntityType::Goblin(_) => {
+                // 50% chance to drop bones
+                let mut rng = rand::thread_rng();
+                if rng.gen_bool(0.5) {
+                    Some(vec![Item::bones()])
                 } else {
                     None
                 }
             }
-            EntityType::Cow(combat) => {
-                if combat.is_dead() {
-                    self.respawn_timer = Some(5.0); // 5 seconds to respawn
-                    Some(self.get_drops())
-                } else {
-                    None
-                }
+            EntityType::Cow(_) => {
+                Some(vec![Item::raw_beef()])
             }
         }
     }

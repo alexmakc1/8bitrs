@@ -309,6 +309,31 @@ def draw_gp(draw):
     draw.ellipse([3, 6, 11, 14], fill=(255, 215, 0), outline=(218, 165, 32))
     draw.ellipse([2, 8, 10, 16], fill=(255, 215, 0), outline=(218, 165, 32))
 
+# Raw beef sprite
+def draw_raw_beef(draw):
+    # Draw the main meat shape
+    draw.rectangle([4, 4, 12, 12], fill=(200, 100, 100))  # Raw meat color
+    # Add some texture/marbling
+    draw.line([5, 6, 11, 6], fill=(255, 200, 200))  # Light pink marbling
+    draw.line([6, 8, 10, 8], fill=(255, 200, 200))  # More marbling
+    draw.line([7, 10, 9, 10], fill=(255, 200, 200))  # More marbling
+
+# Cooked beef sprite
+def draw_cooked_beef(draw):
+    # Draw the main meat shape
+    draw.rectangle([4, 4, 12, 12], fill=(139, 69, 19))  # Brown color for cooked meat
+    # Add grill marks
+    draw.line([5, 6, 11, 6], fill=(90, 45, 12))  # Dark brown grill marks
+    draw.line([5, 9, 11, 9], fill=(90, 45, 12))  # More grill marks
+
+# Burnt beef sprite
+def draw_burnt_beef(draw):
+    # Draw the main meat shape
+    draw.rectangle([4, 4, 12, 12], fill=(50, 25, 0))  # Very dark brown/black
+    # Add burnt texture
+    draw.line([5, 6, 11, 6], fill=(30, 15, 0))  # Almost black lines
+    draw.line([5, 9, 11, 9], fill=(30, 15, 0))  # More burnt lines
+
 # List of all sprites to create
 sprites = [
     ('player', 16, draw_player),
@@ -333,8 +358,8 @@ sprites = [
     ('bronze_helmet', 16, draw_bronze_helmet),
     ('bronze_platebody', 16, draw_bronze_platebody),
     ('bronze_platelegs', 16, draw_bronze_platelegs),
-    ('bronze_sword', 16, draw_bronze_sword),  # Added bronze sword
-    ('bronze_axe', 16, draw_axe),  # Reusing axe sprite for bronze axe
+    ('bronze_sword', 16, draw_bronze_sword),
+    ('bronze_axe', 16, draw_axe),
     ('fishing_rod', 16, draw_fishing_rod),
     ('bait', 16, draw_bait),
     ('tinderbox', 16, draw_tinderbox),
@@ -343,8 +368,11 @@ sprites = [
     ('raw_trout', 16, draw_raw_trout),
     ('cooked_trout', 16, draw_cooked_trout),
     ('burnt_fish', 16, draw_burnt_fish),
-    ('bank_chest', 16, draw_bank_chest),  # Add bank chest sprite
-    ('gp', 16, draw_gp),  # Add GP sprite creation
+    ('bank_chest', 16, draw_bank_chest),
+    ('gp', 16, draw_gp),
+    ('raw_beef', 16, draw_raw_beef),
+    ('cooked_beef', 16, draw_cooked_beef),
+    ('burnt_beef', 16, draw_burnt_beef),
 ]
 
 # Create all sprites
@@ -384,5 +412,8 @@ if __name__ == "__main__":
     create_sprite('tinderbox', 16, draw_tinderbox)
     create_sprite('raw_shrimp', 16, draw_raw_shrimp)
     create_sprite('cooked_shrimp', 16, draw_cooked_shrimp)
-    create_sprite('bank_chest', 16, draw_bank_chest)  # Add bank chest sprite
-    create_sprite('gp', 16, draw_gp)  # Add GP sprite creation
+    create_sprite('bank_chest', 16, draw_bank_chest)
+    create_sprite('gp', 16, draw_gp)
+    create_sprite('raw_beef', 16, draw_raw_beef)
+    create_sprite('cooked_beef', 16, draw_cooked_beef)
+    create_sprite('burnt_beef', 16, draw_burnt_beef)
