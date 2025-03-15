@@ -342,7 +342,13 @@ impl GameState {
     }
 
     fn set_destination(&mut self, x: f32, y: f32, action: PendingAction) {
-        println!("Setting destination to ({}, {}) with action: {:?}", x, y, action);
+        println!("Debug: Setting destination to ({}, {}) with action: {:?}", x, y, action);
+        match &action {
+            PendingAction::ChopTree(index) => {
+                println!("Debug: Setting ChopTree action for tree index {}", index);
+            }
+            _ => {}
+        }
         self.target_x = Some(x);
         self.target_y = Some(y);
         self.pending_action = action;
@@ -370,70 +376,93 @@ impl GameState {
         if self.action_timer <= 0.0 {
             match &self.ongoing_action.clone() {
                 OngoingAction::ChoppingTree { x: _, y: _, tree_index } => {
-                    if *tree_index < self.world_objects.len() {
-                        let tree = &mut self.world_objects[*tree_index];
-                        let tree_x = tree.x;
-                        let tree_y = tree.y;
-                        
-                        let dx = tree_x - self.player_x;
-                        let dy = tree_y - self.player_y;
+                    println!("Debug: Attempting to chop tree at index {}", tree_index);
+                    if let Some(tree) = self.world_objects.get_mut(*tree_index) {
+                        // Check distance to tree
+                        let dx = tree.x - self.player_x;
+                        let dy = tree.y - self.player_y;
                         let distance = (dx * dx + dy * dy).sqrt();
                         
+                        println!("Debug: Distance to tree: {}", distance);
                         if distance > 40.0 {
+                            println!("Debug: Too far from tree, moving closer");
+                            let tree_x = tree.x;
+                            let tree_y = tree.y;
                             self.set_destination(tree_x, tree_y, PendingAction::ChopTree(*tree_index));
                             return;
                         }
 
-                        let axe = self.inventory.get_items().iter()
-                            .filter_map(|item| item.as_ref())
-                            .find(|item| matches!(&item.item_type, ItemType::Tool(ToolType::Axe { .. })));
-
-                        if tree.try_chop(&self.skills, axe) {
-                            if self.action_timer <= 0.0 {
-                                self.game_ui.add_message("You swing your axe at the tree.".to_string());
-                                
-                                if self.inventory.add_item(Item::logs()) {
-                                    self.skills.gain_woodcutting_xp(25);
-                                    self.game_ui.add_message("You get a log.".to_string());
-                                    
-                                    // Random chance (20%) for the tree to fall after getting a log
-                                    let mut rng = rand::thread_rng();
-                                    if rng.gen_bool(0.20) {
-                                        tree.set_chopped();
-                                        self.game_ui.add_message("The tree falls down!".to_string());
-                                        self.cancel_ongoing_action();
-                                        return;
+                        println!("Debug: Attempting to chop tree. Tree health: {}, Tree fallen: {}", tree.health, tree.fallen);
+                        
+                        // Find axe in inventory and get its woodcutting level
+                        let axe_info = {
+                            let items = self.inventory.get_items();
+                            items.iter()
+                                .find(|item| {
+                                    if let Some(item) = item {
+                                        matches!(&item.item_type, ItemType::Tool(ToolType::Axe { .. }))
+                                    } else {
+                                        false
                                     }
-                                } else {
-                                    self.game_ui.add_message("Your inventory is full.".to_string());
-                                    self.cancel_ongoing_action();
-                                    return;
-                                }
-                            }
+                                })
+                                .and_then(|item| item.as_ref())
+                                .map(|axe| {
+                                    if let ItemType::Tool(ToolType::Axe { woodcutting_level }) = axe.item_type {
+                                        (axe.clone(), woodcutting_level)
+                                    } else {
+                                        unreachable!()
+                                    }
+                                })
+                        };
+
+                        if axe_info.is_none() {
+                            self.game_ui.add_message("You need an axe to chop trees.".to_string());
+                            self.cancel_ongoing_action();
+                            return;
+                        }
+
+                        let (axe, woodcutting_level) = axe_info.unwrap();
+                        if tree.try_chop(&self.skills, Some(&axe)) {
+                            println!("Debug: Successfully chopped tree");
+                            self.game_ui.add_message("You swing your axe at the tree.".to_string());
                             
-                            self.action_timer = 3.0;
+                            // Add one log to inventory
+                            if self.inventory.add_item(Item::logs()) {
+                                println!("Debug: Added 1 log to inventory");
+                                self.skills.gain_woodcutting_xp(25);
+                                self.game_ui.add_message("You get a log.".to_string());
+                            } else {
+                                self.game_ui.add_message("Your inventory is full.".to_string());
+                                self.cancel_ongoing_action();
+                                return;
+                            }
+
+                            if tree.fallen {
+                                println!("Debug: Tree is now fully chopped");
+                                self.game_ui.add_message("The tree falls down!".to_string());
+                                self.cancel_ongoing_action();
+                            } else {
+                                println!("Debug: Setting next chop timer");
+                                // Calculate chop time based on woodcutting level and axe type
+                                let base_time = 3.0;
+                                let level_bonus = self.skills.woodcutting.get_level() as f32 * 0.03;
+                                let axe_bonus = woodcutting_level as f32 * 0.05;
+                                self.action_timer = (base_time - level_bonus - axe_bonus).max(1.2);
+                            }
                         } else {
-                            if !matches!(tree.object_type, ObjectType::Tree) {
-                                self.game_ui.add_message("You can't chop that.".to_string());
-                            } else if tree.is_chopped() || tree.fallen {
+                            println!("Debug: Failed to chop tree");
+                            if tree.is_chopped() || tree.fallen {
                                 self.game_ui.add_message("This tree is already chopped down.".to_string());
                             } else {
-                                let axe_level = axe.and_then(|item| {
-                                    if let ItemType::Tool(ToolType::Axe { woodcutting_level }) = &item.item_type {
-                                        Some(woodcutting_level)
-                                    } else {
-                                        None
-                                    }
-                                });
-
-                                match axe_level {
-                                    None => self.game_ui.add_message("You need an axe to chop trees.".to_string()),
-                                    Some(level) => self.game_ui.add_message(format!("You need level {} Woodcutting to use this axe.", level)),
+                                if let ItemType::Tool(ToolType::Axe { woodcutting_level }) = &axe.item_type {
+                                    println!("Debug: Player lacks required woodcutting level {}", woodcutting_level);
+                                    self.game_ui.add_message(format!("You need level {} Woodcutting to use this axe.", woodcutting_level));
                                 }
                             }
                             self.cancel_ongoing_action();
                         }
                     } else {
+                        println!("Debug: Tree index {} not found", tree_index);
                         self.cancel_ongoing_action();
                     }
                 }
@@ -846,17 +875,29 @@ impl GameState {
     fn handle_context_action(&mut self, action: ContextMenuAction, x: f32, y: f32) {
         match action {
             ContextMenuAction::ChopTree => {
-                if let Some((tree_index, tree)) = self.world_objects.iter().enumerate()
-                    .find(|(_, obj)| {
-                        matches!(obj.object_type, ObjectType::Tree) && !obj.fallen &&
-                        {
-                            let dx = obj.x - x;
-                            let dy = obj.y - y;
-                            dx * dx + dy * dy < 100.0
-                        }
-                    }) {
-                    self.game_ui.add_message("You walk towards the tree...".to_string());
-                    self.set_destination(x, y, PendingAction::ChopTree(tree_index));
+                println!("Debug: ChopTree action received at coordinates ({}, {})", x, y);
+                // First find the closest tree to the click location
+                let closest_tree = self.world_objects.iter().enumerate()
+                    .filter(|(_, obj)| matches!(obj.object_type, ObjectType::Tree) && !obj.fallen)
+                    .map(|(i, obj)| {
+                        let dx = obj.x - x;
+                        let dy = obj.y - y;
+                        let dist = dx * dx + dy * dy;
+                        println!("Debug: Checking tree at index {} - distance: {}, fallen: {}", i, dist.sqrt(), obj.fallen);
+                        (i, obj, dist)
+                    })
+                    .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+
+                if let Some((tree_index, tree, dist)) = closest_tree {
+                    if dist.sqrt() < 100.0 {
+                        println!("Debug: Found valid tree at index {}, distance {}, setting destination", tree_index, dist.sqrt());
+                        self.game_ui.add_message("You walk towards the tree...".to_string());
+                        self.set_destination(tree.x, tree.y, PendingAction::ChopTree(tree_index));
+                    } else {
+                        println!("Debug: Closest tree too far away (distance: {})", dist.sqrt());
+                    }
+                } else {
+                    println!("Debug: No valid tree found near click location");
                 }
             }
             ContextMenuAction::PickupItem => {
