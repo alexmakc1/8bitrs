@@ -111,7 +111,7 @@ impl GameState {
                 action_timer: 0.0,
                 sprite_manager: &*sprite_manager,
                 world_objects: Vec::new(),
-                bank: Bank::new(800),
+                bank: save_data.bank,
             }
         } else {
             // Create new game state
@@ -290,12 +290,12 @@ impl GameState {
                         if tree_index < self.world_objects.len() {
                             let tree = &self.world_objects[tree_index];
                             if !tree.fallen {
-                                self.ongoing_action = OngoingAction::ChoppingTree { 
-                                    x: tree.x, 
-                                    y: tree.y, 
-                                    tree_index 
-                                };
-                                self.action_timer = 0.0;
+                            self.ongoing_action = OngoingAction::ChoppingTree { 
+                                x: tree.x, 
+                                y: tree.y, 
+                                tree_index 
+                            };
+                            self.action_timer = 0.0;
                                 self.game_ui.add_message("You begin chopping the tree.".to_string());
                             } else {
                                 self.game_ui.add_message("This tree is already chopped down.".to_string());
@@ -333,6 +333,7 @@ impl GameState {
             &self.player_combat,
             &self.inventory,
             &self.equipment,
+            &self.bank,
         );
 
         match save_data.save_to_file(ctx) {
@@ -441,7 +442,7 @@ impl GameState {
                                 println!("Debug: Tree is now fully chopped");
                                 self.game_ui.add_message("The tree falls down!".to_string());
                                 self.cancel_ongoing_action();
-                            } else {
+                        } else {
                                 println!("Debug: Setting next chop timer");
                                 // Calculate chop time based on woodcutting level and axe type
                                 let base_time = 3.0;
@@ -549,9 +550,9 @@ impl GameState {
             .map(|(i, _)| i)
         {
             let target = &mut self.entities[target_index];
-            let attack_bonus = self.equipment.get_total_attack_bonus();
-            let strength_bonus = self.equipment.get_total_strength_bonus();
-            let defense_bonus = self.equipment.get_total_defense_bonus();
+                let attack_bonus = self.equipment.get_total_attack_bonus();
+                let strength_bonus = self.equipment.get_total_strength_bonus();
+                let defense_bonus = self.equipment.get_total_defense_bonus();
 
             // Get target name first
             let target_name = match &target.entity_type {
@@ -570,7 +571,7 @@ impl GameState {
                     if target_combat.is_dead() {
                         self.game_ui.add_message(format!("The {} is dead!", target_name.chars().next().unwrap().to_uppercase().collect::<String>() + &target_name[1..]));
                         let drops = target.get_drops();
-                        for item in drops {
+                            for item in drops {
                             self.dropped_items.push(DroppedItem::new(item, target_x, target_y));
                         }
                         self.skills.gain_attack_xp(10);
@@ -781,7 +782,7 @@ impl GameState {
                     match obj.object_type {
                         ObjectType::Tree => {
                             if !obj.fallen {
-                                actions.push(("Chop tree".to_string(), ContextMenuAction::ChopTree));
+                            actions.push(("Chop tree".to_string(), ContextMenuAction::ChopTree));
                             }
                             actions.push(("Examine tree".to_string(), ContextMenuAction::Examine(
                                 if obj.fallen {
@@ -923,14 +924,17 @@ impl GameState {
             ContextMenuAction::Examine(text) => {
                 self.game_ui.add_message(text);
             }
-            ContextMenuAction::WithdrawOne |
-            ContextMenuAction::WithdrawTen |
+            // Handle bank-related actions by delegating to GameUI
+            ContextMenuAction::WithdrawOne | 
+            ContextMenuAction::WithdrawTen | 
             ContextMenuAction::WithdrawHundred |
+            ContextMenuAction::WithdrawAll |
             ContextMenuAction::WithdrawX |
             ContextMenuAction::DepositOne |
             ContextMenuAction::DepositTen |
             ContextMenuAction::DepositHundred |
-            ContextMenuAction::DepositX => {
+            ContextMenuAction::DepositX |
+            ContextMenuAction::DepositAll => {
                 self.game_ui.handle_context_action(action, &mut self.inventory, &mut self.bank);
             }
             ContextMenuAction::None => {}
@@ -1202,8 +1206,8 @@ impl EventHandler for GameState {
 
         if self.game_ui.inventory_visible {
             // Check if click is in inventory area
-            if x >= 30.0 && x <= 210.0 && y >= 50.0 && y <= 290.0 {
-                let slot_x = ((x - 30.0) / 45.0).floor() as usize;
+            if x >= 30.0 && x <= 210.0 && y >= 50.0 && y <= 365.0 {
+                    let slot_x = ((x - 30.0) / 45.0).floor() as usize;
                 let slot_y = ((y - 50.0) / 45.0).floor() as usize;
                 let slot = slot_y * 4 + slot_x;
                 
@@ -1211,18 +1215,8 @@ impl EventHandler for GameState {
                     if self.game_ui.bank_visible {
                         // Handle bank deposit
                         if let Some(item) = self.inventory.get_item(slot).cloned() {
-                            if item.is_stackable() {
-                                // For stackable items, show deposit options
-                                self.game_ui.handle_inventory_click(slot, button, x, y, &mut self.inventory);
-                            } else {
-                                // For non-stackable items, deposit directly
-                                if self.bank.add_item(item.clone()) {
-                                    self.inventory.remove_item(slot);
-                                    self.game_ui.add_message(format!("You deposit {}.", item.name));
-                                } else {
-                                    self.game_ui.add_message("Your bank is full.".to_string());
-                                }
-                            }
+                            // For all items, show deposit options
+                            self.game_ui.handle_inventory_click(slot, button, x, y, &mut self.inventory);
                         }
                     } else {
                         self.handle_inventory_click(slot, button);
@@ -1248,11 +1242,12 @@ impl EventHandler for GameState {
         Ok(())
     }
 
-    fn key_down_event(&mut self, _ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
+    fn key_down_event(&mut self, ctx: &mut Context, input: KeyInput, _repeat: bool) -> GameResult {
         match input.keycode {
             Some(KeyCode::I) => self.game_ui.toggle_inventory(),
             Some(KeyCode::K) => self.game_ui.toggle_skills_menu(),
             Some(KeyCode::E) => self.game_ui.toggle_equipment_screen(),
+            Some(KeyCode::S) => self.save_game(ctx),
             Some(KeyCode::Escape) => {
                 if self.game_ui.quantity_dialog_visible {
                     self.game_ui.hide_quantity_dialog();

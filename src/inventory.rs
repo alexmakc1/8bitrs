@@ -7,7 +7,7 @@ use ggez::glam::Vec2;
 use crate::SpriteManager;
 use ggez::graphics::Color;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ItemType {
     Weapon(WeaponStats),
     Armor(ArmorStats),
@@ -17,33 +17,33 @@ pub enum ItemType {
     Currency(u32), // value in GP
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WeaponStats {
     pub attack_bonus: i32,
     pub strength_bonus: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArmorStats {
     pub defense_bonus: i32,
     pub slot: ArmorSlot,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ArmorSlot {
     Head,
     Body,
     Legs,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolType {
     Axe { woodcutting_level: u32 },
     Tinderbox,
     FishingRod { fishing_level: u32 },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ResourceType {
     Logs { firemaking_level: u32 },
     RawFish { cooking_level: u32, burn_level: u32 },
@@ -324,6 +324,15 @@ impl Item {
         self.stackable || matches!(self.item_type, ItemType::Currency(_))
     }
 
+    pub fn make_unstackable(&mut self) {
+        self.stackable = false;
+        // If this is currency, transform it to a Resource type to prevent stacking
+        if matches!(self.item_type, ItemType::Currency(_)) {
+            self.item_type = ItemType::Resource(ResourceType::Bones);
+            // Keep the original name so it displays correctly
+        }
+    }
+
     pub fn stack_with(&mut self, other: &Item) -> bool {
         if self.name == other.name && self.is_stackable() {
             self.quantity += other.quantity;
@@ -432,7 +441,7 @@ impl Inventory {
     pub fn add_item(&mut self, item: Item) -> bool {
         if item.is_stackable() {
             for existing_item in self.items.iter_mut().filter_map(|x| x.as_mut()) {
-                if existing_item.name == item.name {
+                if existing_item.name == item.name && existing_item.item_type == item.item_type {
                     existing_item.quantity += item.quantity;
                     return true;
                 }
@@ -467,7 +476,17 @@ impl Inventory {
 
     pub fn remove_items(&mut self, index: usize, amount: u32) -> Option<Item> {
         if let Some(Some(item)) = self.items.get_mut(index) {
-            if !item.is_stackable() || amount > item.quantity {
+            // For non-stackable items, only allow removing 1 at a time
+            if !item.is_stackable() {
+                if amount >= 1 {
+                    return self.items[index].take();
+                } else {
+                    return None;
+                }
+            }
+            
+            // For stackable items, handle partial removal
+            if amount > item.quantity {
                 return None;
             }
             
@@ -512,4 +531,4 @@ impl Inventory {
             None
         }
     }
-} 
+}

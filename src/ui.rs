@@ -2,7 +2,7 @@ use ggez::{Context, GameResult};
 use ggez::graphics::{self, Canvas, Color, Rect};
 use ggez::glam::Vec2;
 use crate::skills::Skills;
-use crate::inventory::{Inventory, DroppedItem};
+use crate::inventory::{Inventory, DroppedItem, ItemType};
 use crate::equipment::Equipment;
 use crate::inventory::ArmorSlot;
 use crate::entity::Entity;
@@ -28,11 +28,13 @@ pub enum ContextMenuAction {
     WithdrawOne,
     WithdrawTen,
     WithdrawHundred,
+    WithdrawAll,
     WithdrawX,
     DepositOne,
     DepositTen,
     DepositHundred,
     DepositX,
+    DepositAll,
     None,
 }
 
@@ -791,7 +793,7 @@ impl GameUI {
                     match button {
                         MouseButton::Left => {
                             // Withdraw item from bank to inventory
-                            if let Some(item) = bank.remove_item(slot) {
+                            if let Some(item) = bank.remove_items(slot, 1) {
                                 if inventory.add_item(item.clone()) {
                                     self.add_message(format!("You withdraw {}.", item.name));
                                 } else {
@@ -801,20 +803,19 @@ impl GameUI {
                             }
                         }
                         MouseButton::Right => {
-                            // Show context menu for stackable items
+                            // Show context menu for all items
                             if let Some(item) = bank.get_item(slot) {
-                                if item.is_stackable() {
-                                    let mut actions = vec![
-                                        ("Withdraw-1".to_string(), ContextMenuAction::WithdrawOne),
-                                        ("Withdraw-10".to_string(), ContextMenuAction::WithdrawTen),
-                                        ("Withdraw-100".to_string(), ContextMenuAction::WithdrawHundred),
-                                        ("Withdraw-X".to_string(), ContextMenuAction::WithdrawX),
-                                        ("Examine".to_string(), ContextMenuAction::Examine(format!("This is {} GP.", item.quantity))),
-                                    ];
-                                    self.context_menu.show(x, y, actions);
-                                    self.selected_bank_slot = Some(slot);
-                                    return true;
-                                }
+                                let mut actions = vec![
+                                    ("Withdraw-1".to_string(), ContextMenuAction::WithdrawOne),
+                                    ("Withdraw-10".to_string(), ContextMenuAction::WithdrawTen),
+                                    ("Withdraw-100".to_string(), ContextMenuAction::WithdrawHundred),
+                                    ("Withdraw-All".to_string(), ContextMenuAction::WithdrawAll),
+                                    ("Withdraw-X".to_string(), ContextMenuAction::WithdrawX),
+                                    ("Examine".to_string(), ContextMenuAction::Examine(format!("This is {}.", item.name))),
+                                ];
+                                self.context_menu.show(x, y, actions);
+                                self.selected_bank_slot = Some(slot);
+                                return true;
                             }
                         }
                         _ => {}
@@ -834,11 +835,12 @@ impl GameUI {
                     true
                 }
                 MouseButton::Right => {
-                    if self.bank_visible && item.is_stackable() {
+                    if self.bank_visible {
                         let mut actions = vec![
                             ("Deposit-1".to_string(), ContextMenuAction::DepositOne),
                             ("Deposit-10".to_string(), ContextMenuAction::DepositTen),
                             ("Deposit-100".to_string(), ContextMenuAction::DepositHundred),
+                            ("Deposit-All".to_string(), ContextMenuAction::DepositAll),
                             ("Deposit-X".to_string(), ContextMenuAction::DepositX),
                             ("Examine".to_string(), ContextMenuAction::Examine(format!("You have {} {}.", item.quantity, item.name))),
                         ];
@@ -849,7 +851,7 @@ impl GameUI {
                         false
                     }
                 }
-                _ => false
+                _ => false,
             }
         } else {
             false
@@ -861,53 +863,121 @@ impl GameUI {
             ContextMenuAction::WithdrawOne => self.withdraw_items(1, inventory, bank),
             ContextMenuAction::WithdrawTen => self.withdraw_items(10, inventory, bank),
             ContextMenuAction::WithdrawHundred => self.withdraw_items(100, inventory, bank),
+            ContextMenuAction::WithdrawAll => {
+                if let Some(slot) = self.selected_bank_slot {
+                    if let Some(item) = bank.get_item(slot) {
+                        // For WithdrawAll, withdraw the entire stack
+                        self.withdraw_items(item.quantity, inventory, bank);
+                    }
+                }
+            }
             ContextMenuAction::WithdrawX => {
-                // TODO: Show input dialog for amount
+                // Show input dialog for amount
                 self.show_quantity_dialog(true);
             }
             ContextMenuAction::DepositOne => self.deposit_items(1, inventory, bank),
             ContextMenuAction::DepositTen => self.deposit_items(10, inventory, bank),
             ContextMenuAction::DepositHundred => self.deposit_items(100, inventory, bank),
+            ContextMenuAction::DepositAll => self.deposit_all_items(inventory, bank),
             ContextMenuAction::DepositX => {
-                // TODO: Show input dialog for amount
+                // Show input dialog for amount
                 self.show_quantity_dialog(false);
             }
             _ => {}
         }
     }
 
-    fn withdraw_items(&mut self, amount: u32, inventory: &mut Inventory, bank: &mut Bank) {
+    pub fn withdraw_items(&mut self, amount: u32, inventory: &mut Inventory, bank: &mut Bank) {
         if let Some(slot) = self.selected_bank_slot {
             if let Some(item) = bank.get_item(slot) {
+                let item_name = item.name.clone();
                 let withdraw_amount = amount.min(item.quantity);
-                if let Some(withdrawn_item) = bank.remove_items(slot, withdraw_amount) {
-                    if inventory.add_item(withdrawn_item.clone()) {
-                        self.add_message(format!("You withdraw {} {}.", withdraw_amount, withdrawn_item.name));
+                
+                // For all items, we need to withdraw them one by one
+                let mut items_added = 0;
+                
+                for _ in 0..withdraw_amount {
+                    if let Some(single_item) = bank.remove_items(slot, 1) {
+                        if inventory.add_item(single_item.clone()) {
+                            items_added += 1;
+                        } else {
+                            // If inventory is full, try to put the item back in the bank
+                            if items_added > 0 {
+                                bank.add_item(single_item);
+                                self.add_message(format!("You withdraw {} {}. Your inventory is full.", items_added, item_name));
+                            } else {
+                                self.add_message("Your inventory is full.".to_string());
+                            }
+                            return;
+                        }
                     } else {
-                        bank.add_item(withdrawn_item); // Put items back in bank
-                        self.add_message("Your inventory is full.".to_string());
+                        break; // No more items to withdraw
+                    }
+                }
+                
+                if items_added > 0 {
+                    self.add_message(format!("You withdraw {} {}.", items_added, item_name));
+                }
+            }
+        }
+    }
+
+    pub fn deposit_items(&mut self, amount: u32, inventory: &mut Inventory, bank: &mut Bank) {
+        if let Some(slot) = self.selected_inventory_slot {
+            if let Some(item) = inventory.get_item(slot) {
+                let item_name = item.name.clone();
+                let deposit_amount = amount.min(item.quantity);
+                
+                if let Some(deposited_item) = inventory.remove_items(slot, deposit_amount) {
+                    if bank.add_item(deposited_item.clone()) {
+                        self.add_message(format!("You deposit {} {}.", deposit_amount, item_name));
+                    } else {
+                        inventory.add_item(deposited_item); // Put items back in inventory
+                        self.add_message("Your bank is full.".to_string());
                     }
                 }
             }
         }
     }
 
-    fn deposit_items(&mut self, amount: u32, inventory: &mut Inventory, bank: &mut Bank) {
+    pub fn deposit_all_items(&mut self, inventory: &mut Inventory, bank: &mut Bank) {
         if let Some(slot) = self.selected_inventory_slot {
-            if let Some(item) = inventory.get_item(slot) {
-                if !item.is_stackable() {
-                    self.add_message("You can only deposit stackable items in stacks.".to_string());
-                    return;
+            if let Some(selected_item) = inventory.get_item(slot) {
+                let item_name = selected_item.name.clone();
+                let item_type = selected_item.item_type.clone();
+                
+                // Find all slots with the same item type
+                let mut slots_to_deposit = Vec::new();
+                for i in 0..inventory.get_items().len() {
+                    if let Some(item) = inventory.get_item(i) {
+                        if item.name == item_name && item.item_type == item_type {
+                            slots_to_deposit.push(i);
+                        }
+                    }
                 }
                 
-                let deposit_amount = amount.min(item.quantity);
-                if let Some(deposited_item) = inventory.remove_items(slot, deposit_amount) {
-                    if bank.add_item(deposited_item.clone()) {
-                        self.add_message(format!("You deposit {} {}.", deposit_amount, deposited_item.name));
-                    } else {
-                        inventory.add_item(deposited_item); // Put items back in inventory
-                        self.add_message("Your bank is full.".to_string());
+                // Deposit items starting from the highest slot index (to avoid shifting problems)
+                slots_to_deposit.sort_by(|a, b| b.cmp(a));
+                
+                let mut total_deposited = 0;
+                for slot_to_deposit in slots_to_deposit {
+                    if let Some(item) = inventory.get_item(slot_to_deposit) {
+                        let deposit_amount = item.quantity;
+                        
+                        if let Some(deposited_item) = inventory.remove_items(slot_to_deposit, deposit_amount) {
+                            if bank.add_item(deposited_item.clone()) {
+                                total_deposited += deposit_amount;
+                            } else {
+                                inventory.add_item(deposited_item); // Put items back in inventory
+                                self.add_message("Your bank is full.".to_string());
+                                break;
+                            }
+                        }
                     }
+                }
+                
+                if total_deposited > 0 {
+                    self.add_message(format!("You deposit {} {}.", total_deposited, item_name));
                 }
             }
         }
@@ -936,10 +1006,12 @@ impl GameUI {
 
     pub fn handle_quantity_enter(&mut self, inventory: &mut Inventory, bank: &mut Bank) {
         if let Ok(amount) = self.quantity_input.parse::<u32>() {
-            if self.quantity_dialog_is_withdraw {
-                self.withdraw_items(amount, inventory, bank);
-            } else {
-                self.deposit_items(amount, inventory, bank);
+            if amount > 0 {
+                if self.quantity_dialog_is_withdraw {
+                    self.withdraw_items(amount, inventory, bank);
+                } else {
+                    self.deposit_items(amount, inventory, bank);
+                }
             }
         }
         self.hide_quantity_dialog();

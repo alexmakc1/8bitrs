@@ -103,45 +103,17 @@ impl WorldObject {
     }
 
     pub fn try_chop(&mut self, skills: &Skills, axe: Option<&Item>) -> bool {
-        println!("Debug: try_chop called on WorldObject");
-        println!("Debug: Object type: {:?}, Health: {}, Fallen: {}", self.object_type, self.health, self.fallen);
-        
         if self.is_chopped() || !matches!(self.object_type, ObjectType::Tree) || self.fallen {
-            println!("Debug: Cannot chop - is_chopped: {}, is_tree: {}, fallen: {}", 
-                self.is_chopped(), 
-                matches!(self.object_type, ObjectType::Tree),
-                self.fallen
-            );
             return false;
         }
 
         if let Some(item) = axe {
-            println!("Debug: Found axe: {:?}", item.item_type);
             if let ItemType::Tool(ToolType::Axe { woodcutting_level }) = &item.item_type {
-                println!("Debug: Player woodcutting level: {}, Required level: {}", 
-                    u32::from(skills.woodcutting.get_level()), 
-                    woodcutting_level
-                );
                 if u32::from(skills.woodcutting.get_level()) >= *woodcutting_level {
-                    // Calculate fall chance based on woodcutting level and axe level
-                    let mut rng = rand::thread_rng();
-                    let base_chance = 0.1; // 10% base chance
-                    let level_bonus = (u32::from(skills.woodcutting.get_level()) as f64 * 0.002).min(0.15); // Up to 15% from level
-                    let axe_bonus = (*woodcutting_level as f64 * 0.005).min(0.1); // Up to 10% from axe
-                    let fall_chance = base_chance + level_bonus + axe_bonus;
-                    
-                    if rng.gen_bool(fall_chance) {
-                        println!("Debug: Tree falls! (chance was {})", fall_chance);
-                        self.fallen = true;
-                        self.blocks_movement = false;  // Allow walking over stumps
-                    }
                     return true;
-                } else {
-                    println!("Debug: Player's woodcutting level too low");
                 }
             }
         }
-        println!("Debug: Chopping failed");
         false
     }
 

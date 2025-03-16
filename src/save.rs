@@ -7,6 +7,7 @@ use crate::skills::Skills;
 use crate::inventory::Inventory;
 use crate::equipment::Equipment;
 use crate::combat::Combat;
+use crate::bank::Bank;
 
 #[derive(Serialize, Deserialize)]
 pub struct SaveData {
@@ -24,6 +25,9 @@ pub struct SaveData {
     // Items
     pub inventory: Inventory,
     pub equipment: Equipment,
+    
+    // Bank items
+    pub bank: Bank,
 }
 
 impl SaveData {
@@ -85,6 +89,7 @@ pub fn create_save_data(
     player_combat: &Combat,
     inventory: &Inventory,
     equipment: &Equipment,
+    bank: &crate::bank::Bank,
 ) -> SaveData {
     SaveData {
         player_x,
@@ -94,5 +99,6 @@ pub fn create_save_data(
         max_health: player_combat.max_health,
         inventory: inventory.clone(),
         equipment: equipment.clone(),
+        bank: bank.clone(),
     }
 } 
